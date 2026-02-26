@@ -114,5 +114,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <button type="submit" class="btn btn-primary w-100">Sign In</button>
         </form>
     </div>
+    <div class="text-center mt-4">
+        <small style="color:rgba(255,255,255,0.5);">Powered by <strong style="color:rgba(255,255,255,0.7);">VyomaAI Studios</strong></small>
+    </div>
 </body>
 </html>

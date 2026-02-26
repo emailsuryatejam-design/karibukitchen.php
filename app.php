@@ -247,6 +247,11 @@ $showGuestPopup = ($role === 'chef' && !$todaySession && $page !== 'reports' && 
         a.click();
     }
     </script>
+
+    <!-- Footer -->
+    <footer class="text-center py-3 no-print" style="background:#1a1a2e; color:rgba(255,255,255,0.5); font-size:0.8rem;">
+        Powered by <strong style="color:rgba(255,255,255,0.7);">VyomaAI Studios</strong>
+    </footer>
 </body>
 </html>
 
