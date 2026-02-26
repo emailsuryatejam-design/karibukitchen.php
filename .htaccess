@@ -1,0 +1,21 @@
+# Protect config file
+<Files "config.php">
+    Order Allow,Deny
+    Deny from all
+</Files>
+
+# Protect setup file after initial run
+# Uncomment the lines below after running setup.php once
+# <Files "setup.php">
+#     Order Allow,Deny
+#     Deny from all
+# </Files>
+
+# Enable URL rewriting
+RewriteEngine On
+
+# Block directory listing
+Options -Indexes
+
+# Set default charset
+AddDefaultCharset UTF-8
