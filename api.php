@@ -166,6 +166,30 @@ switch ($action) {
         echo json_encode(['success'=>true]);
         break;
 
+    case 'edit_user':
+        if (getUserRole()!=='admin') { echo json_encode(['success'=>false,'message'=>'Not authorized']); exit; }
+        $userId = intval($_POST['user_id']??0);
+        $username = trim($_POST['username']??'');
+        $fullname = trim($_POST['fullname']??'');
+        $role = $_POST['role']??'chef';
+        $kitchenId = intval($_POST['kitchen_id']??0)?:null;
+        $password = $_POST['password']??'';
+        if (!$userId || !$username || !$fullname) { echo json_encode(['success'=>false,'message'=>'All fields required']); exit; }
+        // Check username uniqueness (excluding current user)
+        $dup = $db->prepare("SELECT id FROM pilot_users WHERE username=? AND id!=?"); $dup->execute([$username, $userId]);
+        if ($dup->fetch()) { echo json_encode(['success'=>false,'message'=>'Username already taken']); exit; }
+        try {
+            if ($password) {
+                $db->prepare("UPDATE pilot_users SET username=?, name=?, role=?, kitchen_id=?, password_hash=? WHERE id=?")
+                    ->execute([$username, $fullname, $role, $kitchenId, password_hash($password, PASSWORD_DEFAULT), $userId]);
+            } else {
+                $db->prepare("UPDATE pilot_users SET username=?, name=?, role=?, kitchen_id=? WHERE id=?")
+                    ->execute([$username, $fullname, $role, $kitchenId, $userId]);
+            }
+            echo json_encode(['success'=>true]);
+        } catch (Exception $e) { echo json_encode(['success'=>false,'message'=>'Error updating user']); }
+        break;
+
     case 'assign_kitchen':
         if (getUserRole()!=='admin') { echo json_encode(['success'=>false,'message'=>'Not authorized']); exit; }
         $kitchenId = intval($_POST['kitchen_id']??0)?:null;

@@ -1187,7 +1187,7 @@ function include_manage_users($db) {
     $kitchens = $db->query("SELECT * FROM pilot_kitchens WHERE is_active=1 ORDER BY name")->fetchAll();
 ?>
     <h4 class="mb-3">Manage Users</h4>
-    <div class="card mb-4"><div class="card-header">Add New User</div><div class="card-body">
+    <div class="card mb-4"><div class="card-header"><i class="bi bi-person-plus"></i> Add New User</div><div class="card-body">
         <form id="addUserForm" class="row g-2 align-items-end">
             <div class="col-md-2"><label class="form-label">Username</label><input type="text" name="username" class="form-control" required></div>
             <div class="col-md-2"><label class="form-label">Password</label><input type="password" name="password" class="form-control" required></div>
@@ -1200,23 +1200,106 @@ function include_manage_users($db) {
     <div class="table-responsive">
     <table class="table table-striped"><thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Kitchen</th><th>Status</th><th>Actions</th></tr></thead><tbody>
     <?php foreach($users as $u): ?>
-    <tr><td><code><?=htmlspecialchars($u['username'])?></code></td><td><?=htmlspecialchars($u['name'])?></td><td><span class="badge bg-<?=$u['role']==='admin'?'danger':($u['role']==='chef'?'primary':'success')?>"><?=ucfirst($u['role'])?></span></td>
-    <td>
-        <select class="form-select form-select-sm" onchange="assignKitchen(<?=$u['id']?>,this.value)" style="width:auto;display:inline-block">
-            <option value="">-- None --</option>
-            <?php foreach($kitchens as $k): ?><option value="<?=$k['id']?>" <?=$u['kitchen_id']==$k['id']?'selected':''?>><?=htmlspecialchars($k['name'])?></option><?php endforeach; ?>
-        </select>
-    </td>
-    <td><?=$u['is_active']?'<span class="badge bg-success">Active</span>':'<span class="badge bg-secondary">Inactive</span>'?></td>
-    <td><button class="btn btn-sm btn-outline-<?=$u['is_active']?'warning':'success'?>" onclick="toggleUser(<?=$u['id']?>,<?=$u['is_active']?0:1?>)"><?=$u['is_active']?'Deactivate':'Activate'?></button></td></tr>
+    <tr>
+        <td><code><?=htmlspecialchars($u['username'])?></code></td>
+        <td><?=htmlspecialchars($u['name'])?></td>
+        <td><span class="badge bg-<?=$u['role']==='admin'?'danger':($u['role']==='chef'?'primary':'success')?>"><?=ucfirst($u['role'])?></span></td>
+        <td>
+            <select class="form-select form-select-sm" onchange="assignKitchen(<?=$u['id']?>,this.value)" style="width:auto;display:inline-block">
+                <option value="">-- None --</option>
+                <?php foreach($kitchens as $k): ?><option value="<?=$k['id']?>" <?=$u['kitchen_id']==$k['id']?'selected':''?>><?=htmlspecialchars($k['name'])?></option><?php endforeach; ?>
+            </select>
+        </td>
+        <td><?=$u['is_active']?'<span class="badge bg-success">Active</span>':'<span class="badge bg-secondary">Inactive</span>'?></td>
+        <td class="d-flex gap-1">
+            <button class="btn btn-sm btn-outline-primary" onclick="openEditUser(<?=htmlspecialchars(json_encode($u))?>)" title="Edit"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-sm btn-outline-<?=$u['is_active']?'warning':'success'?>" onclick="toggleUser(<?=$u['id']?>,<?=$u['is_active']?0:1?>)" title="<?=$u['is_active']?'Deactivate':'Activate'?>"><?=$u['is_active']?'<i class="bi bi-pause-circle"></i>':'<i class="bi bi-play-circle"></i>'?></button>
+        </td>
+    </tr>
     <?php endforeach; ?></tbody></table></div>
+
+    <!-- Edit User Modal -->
+    <div class="modal fade" id="editUserModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header" style="background:var(--primary);color:#fff;">
+                    <h5 class="modal-title"><i class="bi bi-pencil-square"></i> Edit User</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editUserForm">
+                        <input type="hidden" name="user_id" id="editUserId">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Username</label>
+                            <input type="text" name="username" id="editUsername" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Full Name</label>
+                            <input type="text" name="fullname" id="editFullname" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Role</label>
+                            <select name="role" id="editRole" class="form-select">
+                                <option value="chef">Chef</option>
+                                <option value="store">Store</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Kitchen</label>
+                            <select name="kitchen_id" id="editKitchenId" class="form-select">
+                                <option value="">-- None --</option>
+                                <?php foreach($kitchens as $k): ?><option value="<?=$k['id']?>"><?=htmlspecialchars($k['name'])?></option><?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">New Password</label>
+                            <input type="password" name="password" id="editPassword" class="form-control" placeholder="Leave blank to keep current">
+                            <small class="text-muted">Only fill if you want to change the password</small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveEditUser"><i class="bi bi-check-lg"></i> Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
     $('#addUserForm').on('submit',function(e){ e.preventDefault();
         var f = $('#addUserForm');
         $.post('api.php',{action:'add_user', username:f.find('[name=username]').val(), password:f.find('[name=password]').val(), fullname:f.find('[name=fullname]').val(), role:f.find('[name=role]').val(), kitchen_id:f.find('[name=kitchen_id]').val()},function(res){ if(res.success) location.reload(); else alert(res.message||'Error'); },'json');
     });
-    function toggleUser(id,active){ $.post('api.php',{action:'toggle_user',user_id:id,is_active:active},function(res){ if(res.success) location.reload(); else alert(res.message); },'json'); }
+    function toggleUser(id,active){ $.post('api.php',{action:'toggle_user',user_id:id,is_active:active},function(res){ if(res.success) location.reload(); else alert(res.message||'Error'); },'json'); }
     function assignKitchen(userId,kitchenId){ $.post('api.php',{action:'assign_kitchen',user_id:userId,kitchen_id:kitchenId},function(res){ if(!res.success) alert(res.message||'Error'); },'json'); }
+
+    function openEditUser(user) {
+        $('#editUserId').val(user.id);
+        $('#editUsername').val(user.username);
+        $('#editFullname').val(user.name);
+        $('#editRole').val(user.role);
+        $('#editKitchenId').val(user.kitchen_id || '');
+        $('#editPassword').val('');
+        new bootstrap.Modal('#editUserModal').show();
+    }
+    $('#saveEditUser').on('click', function(){
+        var data = {
+            action: 'edit_user',
+            user_id: $('#editUserId').val(),
+            username: $('#editUsername').val(),
+            fullname: $('#editFullname').val(),
+            role: $('#editRole').val(),
+            kitchen_id: $('#editKitchenId').val(),
+            password: $('#editPassword').val()
+        };
+        if (!data.username || !data.fullname) { alert('Username and name are required'); return; }
+        $.post('api.php', data, function(res){
+            if (res.success) { location.reload(); }
+            else alert(res.message || 'Error');
+        }, 'json');
+    });
     </script>
 <?php }
 
