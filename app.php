@@ -864,41 +864,97 @@ function include_manage_items($db) {
     if (getUserRole() !== 'admin') { echo '<div class="alert alert-danger">Access denied.</div>'; return; }
     $items = $db->query("SELECT * FROM pilot_items ORDER BY category, name")->fetchAll();
     $categories = []; foreach($items as $item) $categories[$item['category']][] = $item;
+    $totalItems = count($items);
+    $activeItems = count(array_filter($items, fn($i) => $i['is_active']));
 ?>
-    <h4 class="mb-3">Manage Standard Items</h4>
-    <div class="card mb-4"><div class="card-header">Add New Item</div><div class="card-body">
-        <form id="addItemForm" class="row g-2 align-items-end">
-            <div class="col-md-3"><label class="form-label">Item Name</label><input type="text" name="name" class="form-control" required></div>
-            <div class="col-md-2"><label class="form-label">Category</label><input type="text" name="category" class="form-control" list="catList" required><datalist id="catList"><?php foreach(array_keys($categories) as $cat): ?><option value="<?=htmlspecialchars($cat)?>"><?php endforeach; ?></datalist></div>
-            <div class="col-md-2"><label class="form-label">Portion Weight (grams)</label><input type="number" name="portion_grams" class="form-control" step="1" min="1" value="300" required><small class="text-muted">Entered in grams, displayed in kg</small></div>
-            <div class="col-md-2"><label class="form-label">Preview</label><div class="form-control-plaintext"><span id="kgPreview">0.300 kg</span> | <span id="perKgPreview">3.33 per kg</span></div></div>
-            <div class="col-md-2"><button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus"></i> Add</button></div>
-        </form>
-    </div></div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">Manage Items</h4>
+        <span class="text-muted"><?=$activeItems?> active / <?=$totalItems?> total</span>
+    </div>
+
+    <!-- Add New Item Card -->
+    <div class="card mb-4">
+        <div class="card-header"><i class="bi bi-plus-circle"></i> Add New Item</div>
+        <div class="card-body">
+            <form id="addItemForm">
+                <div class="row g-3 mb-3">
+                    <div class="col-12 col-md-5">
+                        <label class="form-label fw-semibold">Item Name <span class="text-danger">*</span></label>
+                        <input type="text" name="name" class="form-control" required placeholder="e.g. Cow Meat, Chicken Breast">
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label fw-semibold">Category <span class="text-danger">*</span></label>
+                        <input type="text" name="category" class="form-control" list="catList" required placeholder="e.g. Meat">
+                        <datalist id="catList"><?php foreach(array_keys($categories) as $cat): ?><option value="<?=htmlspecialchars($cat)?>"><?php endforeach; ?></datalist>
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <label class="form-label fw-semibold">Portion Weight <span class="text-danger">*</span></label>
+                        <div class="input-group">
+                            <input type="number" name="portion_grams" class="form-control" step="1" min="1" value="300" required>
+                            <span class="input-group-text">grams</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="text-muted">
+                        <i class="bi bi-calculator"></i>
+                        <span id="kgPreview" class="fw-semibold text-primary">0.300 kg</span> per portion &middot;
+                        <span id="perKgPreview" class="fw-semibold text-primary">3.33</span> portions per kg
+                    </div>
+                    <button type="submit" class="btn btn-primary px-4"><i class="bi bi-plus-lg"></i> Add Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Item List by Category -->
+    <?php if (empty($categories)): ?>
+        <div class="alert alert-info"><i class="bi bi-info-circle"></i> No items yet. Add your first item above.</div>
+    <?php endif; ?>
     <?php foreach($categories as $cat=>$catItems): ?>
-    <div class="category-header"><?=htmlspecialchars($cat)?> (<?=count($catItems)?> items)</div>
-    <div class="table-responsive"><table class="table table-sm table-striped"><thead><tr><th>Name</th><th>UOM</th><th>Portion (kg)</th><th>Per KG</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-    <?php foreach($catItems as $it):
-        $pwkg = $it['portion_weight_kg'] > 0 ? $it['portion_weight_kg'] : ($it['unit_weight'] > 0 ? $it['unit_weight']/1000/$it['portions_per_unit'] : 0.300);
-        $perKg = $pwkg > 0 ? round(1/$pwkg, 2) : 0;
-    ?>
-    <tr><td><?=htmlspecialchars($it['name'])?></td><td><span class="uom-badge">kg</span></td><td><?=number_format($pwkg,3)?></td><td><?=$perKg?></td>
-    <td><?=$it['is_active']?'<span class="badge bg-success">Active</span>':'<span class="badge bg-secondary">Inactive</span>'?></td>
-    <td><button class="btn btn-sm btn-outline-<?=$it['is_active']?'warning':'success'?>" onclick="toggleItem(<?=$it['id']?>,<?=$it['is_active']?0:1?>)"><?=$it['is_active']?'Deactivate':'Activate'?></button></td></tr>
-    <?php endforeach; ?></tbody></table></div>
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between py-2" style="background:#e8ecf1;color:var(--primary);">
+            <span><i class="bi bi-tag"></i> <?=htmlspecialchars($cat)?></span>
+            <span class="badge bg-primary rounded-pill"><?=count($catItems)?></span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead><tr><th style="width:35%">Item</th><th class="text-center">Portion</th><th class="text-center">Per KG</th><th class="text-center">Status</th><th class="text-end">Action</th></tr></thead>
+                <tbody>
+                <?php foreach($catItems as $it):
+                    $pwkg = $it['portion_weight_kg'] > 0 ? $it['portion_weight_kg'] : ($it['unit_weight'] > 0 ? $it['unit_weight']/1000/$it['portions_per_unit'] : 0.300);
+                    $perKg = $pwkg > 0 ? round(1/$pwkg, 2) : 0;
+                ?>
+                <tr class="<?=$it['is_active']?'':'table-secondary'?>">
+                    <td class="fw-medium"><?=htmlspecialchars($it['name'])?></td>
+                    <td class="text-center"><?=number_format($pwkg,3)?> <small class="text-muted">kg</small></td>
+                    <td class="text-center"><?=$perKg?></td>
+                    <td class="text-center"><?=$it['is_active']?'<span class="badge bg-success">Active</span>':'<span class="badge bg-secondary">Inactive</span>'?></td>
+                    <td class="text-end"><button class="btn btn-sm btn-outline-<?=$it['is_active']?'warning':'success'?>" onclick="toggleItem(<?=$it['id']?>,<?=$it['is_active']?0:1?>)"><i class="bi bi-<?=$it['is_active']?'pause':'play'?>-fill"></i> <?=$it['is_active']?'Disable':'Enable'?></button></td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
     <?php endforeach; ?>
+
     <script>
-    // Live preview for portion weight
     $('[name=portion_grams]').on('input', function(){
         const g = parseFloat($(this).val()) || 0;
         const kg = g / 1000;
         const perKg = kg > 0 ? (1/kg).toFixed(2) : 0;
         $('#kgPreview').text(kg.toFixed(3) + ' kg');
-        $('#perKgPreview').text(perKg + ' per kg');
+        $('#perKgPreview').text(perKg);
     });
     $('#addItemForm').on('submit',function(e){ e.preventDefault();
         var f = $('#addItemForm');
-        $.post('api.php',{action:'add_item', name:f.find('[name=name]').val(), category:f.find('[name=category]').val(), portion_grams:f.find('[name=portion_grams]').val()},function(res){ if(res.success) location.reload(); else alert(res.message||'Error'); },'json');
+        var name = f.find('[name=name]').val().trim();
+        var cat = f.find('[name=category]').val().trim();
+        if (!name || !cat) { alert('Please fill item name and category.'); return; }
+        $.post('api.php',{action:'add_item', name:name, category:cat, portion_grams:f.find('[name=portion_grams]').val()},function(res){
+            if(res.success) location.reload(); else alert(res.message||'Error');
+        },'json');
     });
     function toggleItem(id,active){ $.post('api.php',{action:'toggle_item',item_id:id,is_active:active},function(res){ if(res.success) location.reload(); else alert(res.message); },'json'); }
     </script>
