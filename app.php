@@ -25,7 +25,14 @@ $showGuestPopup = ($role === 'chef' && !$todaySession && $page !== 'reports' && 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pantry Planner - Pilot</title>
+    <title>Karibu Kitchen</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f3460">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Karibu Kitchen">
+    <link rel="apple-touch-icon" href="icons/icon-152.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
@@ -257,6 +264,15 @@ $showGuestPopup = ($role === 'chef' && !$todaySession && $page !== 'reports' && 
     <footer class="text-center py-3 no-print" style="background:#1a1a2e; color:rgba(255,255,255,0.5); font-size:0.8rem;">
         Powered by <strong style="color:rgba(255,255,255,0.7);">VyomaAI Studios</strong>
     </footer>
+
+    <script>
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').then(reg => {
+            console.log('SW registered:', reg.scope);
+        }).catch(err => console.log('SW error:', err));
+    }
+    </script>
 </body>
 </html>
 

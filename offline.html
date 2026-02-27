@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Karibu Kitchen - Offline</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            color: #fff;
+            text-align: center;
+            padding: 20px;
+        }
+        .offline-card {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 50px 40px;
+            max-width: 400px;
+        }
+        .icon { font-size: 64px; margin-bottom: 20px; }
+        h1 { font-size: 1.5rem; margin-bottom: 10px; }
+        p { color: rgba(255,255,255,0.7); margin-bottom: 25px; }
+        .btn-retry {
+            display: inline-block;
+            background: #e94560;
+            color: #fff;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .btn-retry:hover { background: #c73a52; }
+        .brand { margin-top: 30px; font-size: 0.75rem; color: rgba(255,255,255,0.4); }
+    </style>
+</head>
+<body>
+    <div class="offline-card">
+        <div class="icon">&#128268;</div>
+        <h1>You're Offline</h1>
+        <p>Karibu Kitchen needs an internet connection to sync with the kitchen and store.</p>
+        <a href="/" class="btn-retry" onclick="location.reload(); return false;">Try Again</a>
+        <div class="brand">Powered by <strong>VyomaAI Studios</strong></div>
+    </div>
+</body>
+</html>

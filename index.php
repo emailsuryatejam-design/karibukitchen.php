@@ -38,7 +38,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pantry Planner - Pilot Login</title>
+    <title>Karibu Kitchen - Login</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f3460">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Karibu Kitchen">
+    <link rel="apple-touch-icon" href="icons/icon-152.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
@@ -117,5 +124,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <div class="text-center mt-4">
         <small style="color:rgba(255,255,255,0.5);">Powered by <strong style="color:rgba(255,255,255,0.7);">VyomaAI Studios</strong></small>
     </div>
+
+    <!-- PWA Install Banner -->
+    <div id="installBanner" style="display:none; position:fixed; bottom:0; left:0; right:0; background:#0f3460; color:#fff; padding:12px 20px; text-align:center; z-index:9999; box-shadow:0 -2px 10px rgba(0,0,0,0.3);">
+        <span>Install <strong>Karibu Kitchen</strong> on your device</span>
+        <button id="installBtn" style="background:#e94560; color:#fff; border:none; padding:8px 20px; border-radius:6px; margin-left:10px; font-weight:600; cursor:pointer;">Install</button>
+        <button onclick="document.getElementById('installBanner').style.display='none'" style="background:none; border:none; color:rgba(255,255,255,0.6); margin-left:8px; cursor:pointer; font-size:1.2rem;">&times;</button>
+    </div>
+
+    <script>
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').then(reg => {
+            console.log('SW registered:', reg.scope);
+        }).catch(err => console.log('SW error:', err));
+    }
+
+    // PWA Install Prompt
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        document.getElementById('installBanner').style.display = 'block';
+    });
+
+    document.getElementById('installBtn')?.addEventListener('click', () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then(result => {
+                document.getElementById('installBanner').style.display = 'none';
+                deferredPrompt = null;
+            });
+        }
+    });
+    </script>
 </body>
 </html>
