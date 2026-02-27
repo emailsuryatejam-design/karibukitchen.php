@@ -356,9 +356,21 @@ function include_chef_dashboard($db, $session, $today, $kitchenId) {
     <div class="card"><div class="card-header">Quick Actions</div><div class="card-body"><div class="d-flex gap-2 flex-wrap">
         <?php if ($session['status'] === 'open'): ?><a href="?page=requisition" class="btn btn-primary"><i class="bi bi-cart-plus"></i> Create Requisition</a><?php endif; ?>
         <?php if ($session['status'] === 'supplied'): ?><a href="?page=review_supply" class="btn btn-primary"><i class="bi bi-clipboard-check"></i> Review Supply</a><a href="?page=day_close" class="btn btn-accent"><i class="bi bi-moon-stars"></i> Day Close</a><?php endif; ?>
-        <?php if ($session['status'] === 'requisition_sent'): ?><span class="btn btn-outline-secondary disabled"><i class="bi bi-hourglass-split"></i> Waiting for Store...</span><?php endif; ?>
+        <?php if ($session['status'] === 'requisition_sent'): ?>
+            <span class="btn btn-outline-secondary disabled"><i class="bi bi-hourglass-split"></i> Waiting for Store...</span>
+            <button class="btn btn-outline-danger" onclick="resetRequisition(<?=$session['id']?>)"><i class="bi bi-arrow-counterclockwise"></i> Edit / Reset Requisition</button>
+        <?php endif; ?>
         <a href="?page=reports" class="btn btn-outline-primary"><i class="bi bi-file-earmark-bar-graph"></i> View Reports</a>
     </div></div></div>
+    <script>
+    function resetRequisition(sessionId) {
+        if (!confirm('This will delete your current requisition so you can re-create it.\n\nAre you sure?')) return;
+        $.post('api.php', {action:'reset_requisition', session_id:sessionId}, function(res){
+            if (res.success) { location.href='?page=requisition'; }
+            else alert(res.message || 'Error');
+        }, 'json');
+    }
+    </script>
 <?php }
 
 // ============================================================
@@ -395,8 +407,14 @@ function include_requisition($db, $session, $today, $kitchenId) {
             echo '<td>'.htmlspecialchars($it['notes']??'-').'</td></tr>';
         }
         echo '</tbody><tfoot><tr class="fw-bold table-light"><td colspan="5" class="text-end">TOTAL ORDER</td><td class="text-end text-primary">'.number_format($totalOrder,2).' kg</td><td></td></tr></tfoot></table></div></div>';
-        echo '<div class="no-print d-flex gap-2"><button class="btn btn-outline-primary btn-sm" onclick="printSection(\'printRequisition\')"><i class="bi bi-printer"></i> Print</button>';
-        echo '<button class="btn btn-outline-success btn-sm" onclick="downloadCSV(\'reqTable\',\'requisition_'.$today.'\')"><i class="bi bi-download"></i> CSV</button></div>';
+        echo '<div class="no-print d-flex gap-2 flex-wrap mt-2">';
+        echo '<button class="btn btn-outline-primary btn-sm" onclick="printSection(\'printRequisition\')"><i class="bi bi-printer"></i> Print</button>';
+        echo '<button class="btn btn-outline-success btn-sm" onclick="downloadCSV(\'reqTable\',\'requisition_'.$today.'\')"><i class="bi bi-download"></i> CSV</button>';
+        if ($session['status'] === 'requisition_sent') {
+            echo '<button class="btn btn-outline-danger btn-sm ms-auto" onclick="resetRequisition('.$session['id'].')"><i class="bi bi-arrow-counterclockwise"></i> Edit / Reset</button>';
+            echo '<script>function resetRequisition(sid){if(!confirm("This will delete your current requisition so you can re-create it.\\n\\nAre you sure?"))return;$.post("api.php",{action:"reset_requisition",session_id:sid},function(r){if(r.success)location.href="?page=requisition";else alert(r.message||"Error");},"json");}</script>';
+        }
+        echo '</div>';
         return;
     }
 

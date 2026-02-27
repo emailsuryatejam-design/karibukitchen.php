@@ -8,6 +8,24 @@ $action = $_POST['action'] ?? '';
 
 switch ($action) {
 
+    case 'reset_requisition':
+        $sessionId = intval($_POST['session_id'] ?? 0);
+        if (!$sessionId) { echo json_encode(['success'=>false,'message'=>'Missing session']); exit; }
+        $sess = $db->prepare("SELECT * FROM pilot_daily_sessions WHERE id=?"); $sess->execute([$sessionId]); $sess = $sess->fetch();
+        if (!$sess) { echo json_encode(['success'=>false,'message'=>'Session not found']); exit; }
+        // Only allow reset before store has supplied
+        if (!in_array($sess['status'], ['open','requisition_sent'])) {
+            echo json_encode(['success'=>false,'message'=>'Cannot reset — store has already supplied']); exit;
+        }
+        $db->beginTransaction();
+        try {
+            $db->prepare("DELETE FROM pilot_requisitions WHERE session_id=?")->execute([$sessionId]);
+            $db->prepare("UPDATE pilot_daily_sessions SET status='open' WHERE id=?")->execute([$sessionId]);
+            $db->commit();
+            echo json_encode(['success'=>true]);
+        } catch (Exception $e) { $db->rollBack(); echo json_encode(['success'=>false,'message'=>$e->getMessage()]); }
+        break;
+
     case 'create_session':
         $guestCount = intval($_POST['guest_count'] ?? 0);
         $kitchenId = intval($_POST['kitchen_id'] ?? 0);
