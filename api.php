@@ -1,5 +1,6 @@
 <?php
 require_once 'config.php';
+require_once 'push_helper.php';
 header('Content-Type: application/json');
 if (!isLoggedIn()) { echo json_encode(['success'=>false,'message'=>'Not logged in']); exit; }
 
@@ -82,6 +83,17 @@ switch ($action) {
             }
             $db->prepare("UPDATE pilot_daily_sessions SET status='requisition_sent' WHERE id=?")->execute([$sessionId]);
             $db->commit();
+
+            // Push notification to store users
+            $totalKg = 0;
+            foreach ($items as $item) $totalKg += floatval($item['order_kg'] ?? 0);
+            $chefName = getUserName();
+            sendPushToRole('store', $sess['kitchen_id'],
+                'New Requisition from ' . $chefName,
+                count($items) . ' items, ' . number_format($totalKg, 1) . ' kg total — please supply',
+                'app.php?page=supply'
+            );
+
             echo json_encode(['success'=>true]);
         } catch (Exception $e) { $db->rollBack(); echo json_encode(['success'=>false,'message'=>$e->getMessage()]); }
         break;
@@ -103,6 +115,24 @@ switch ($action) {
             }
             $db->prepare("UPDATE pilot_daily_sessions SET status='supplied' WHERE id=?")->execute([$sessionId]);
             $db->commit();
+
+            // Push notification to chef
+            $sessInfo = $db->prepare("SELECT * FROM pilot_daily_sessions WHERE id=?"); $sessInfo->execute([$sessionId]); $sessInfo = $sessInfo->fetch();
+            if ($sessInfo) {
+                // Check for shortages
+                $shortCount = 0;
+                foreach ($items as $item) {
+                    $reqStmt = $db->prepare("SELECT order_kg FROM pilot_requisitions WHERE id=?");
+                    $reqStmt->execute([intval($item['requisition_id'])]);
+                    $reqRow = $reqStmt->fetch();
+                    if ($reqRow && floatval($item['kg_supplied']) < floatval($reqRow['order_kg'])) $shortCount++;
+                }
+                $storeName = getUserName();
+                $title = $shortCount > 0 ? 'Items Supplied — ' . $shortCount . ' shortage(s)!' : 'Items Supplied by Store';
+                $body = $storeName . ' has supplied your order' . ($shortCount > 0 ? '. ' . $shortCount . ' item(s) are short — review and add substitutes if needed.' : '. Review your supply now.');
+                sendPushToUser($sessInfo['chef_id'], $title, $body, 'app.php?page=review_supply');
+            }
+
             echo json_encode(['success'=>true]);
         } catch (Exception $e) { $db->rollBack(); echo json_encode(['success'=>false,'message'=>$e->getMessage()]); }
         break;
@@ -125,6 +155,15 @@ switch ($action) {
             // Set status back to requisition_sent so store sees the new items
             $db->prepare("UPDATE pilot_daily_sessions SET status='requisition_sent' WHERE id=?")->execute([$sessionId]);
             $db->commit();
+
+            // Push notification to store users
+            $chefName = getUserName();
+            sendPushToRole('store', $sess['kitchen_id'],
+                'Substitute Items from ' . $chefName,
+                count($items) . ' substitute item(s) added — please supply the new items',
+                'app.php?page=supply'
+            );
+
             echo json_encode(['success'=>true]);
         } catch (Exception $e) { $db->rollBack(); echo json_encode(['success'=>false,'message'=>$e->getMessage()]); }
         break;
@@ -240,6 +279,61 @@ switch ($action) {
     case 'toggle_item':
         if (getUserRole()!=='admin') { echo json_encode(['success'=>false,'message'=>'Not authorized']); exit; }
         $db->prepare("UPDATE pilot_items SET is_active=? WHERE id=?")->execute([intval($_POST['is_active']??0), intval($_POST['item_id']??0)]);
+        echo json_encode(['success'=>true]);
+        break;
+
+    // ============================================================
+    // PUSH SUBSCRIPTION MANAGEMENT
+    // ============================================================
+    case 'save_push_subscription':
+        $endpoint = $_POST['endpoint'] ?? '';
+        $p256dh = $_POST['p256dh'] ?? '';
+        $auth = $_POST['auth'] ?? '';
+        if (!$endpoint || !$p256dh || !$auth) { echo json_encode(['success'=>false,'message'=>'Missing subscription data']); exit; }
+        $stmt = $db->prepare("INSERT INTO pilot_push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?,?,?,?)
+            ON DUPLICATE KEY UPDATE user_id=VALUES(user_id), p256dh=VALUES(p256dh), auth=VALUES(auth)");
+        $stmt->execute([getUserId(), $endpoint, $p256dh, $auth]);
+        echo json_encode(['success'=>true]);
+        break;
+
+    case 'remove_push_subscription':
+        $endpoint = $_POST['endpoint'] ?? '';
+        if ($endpoint) {
+            $db->prepare("DELETE FROM pilot_push_subscriptions WHERE endpoint = ? AND user_id = ?")->execute([$endpoint, getUserId()]);
+        }
+        echo json_encode(['success'=>true]);
+        break;
+
+    // ============================================================
+    // NOTIFICATION MANAGEMENT
+    // ============================================================
+    case 'get_notifications':
+        $stmt = $db->prepare("SELECT * FROM pilot_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20");
+        $stmt->execute([getUserId()]);
+        echo json_encode(['success'=>true, 'notifications'=>$stmt->fetchAll(PDO::FETCH_ASSOC)]);
+        break;
+
+    case 'get_unread_count':
+        $stmt = $db->prepare("SELECT COUNT(*) FROM pilot_notifications WHERE user_id = ? AND is_read = 0");
+        $stmt->execute([getUserId()]);
+        echo json_encode(['success'=>true, 'count'=>intval($stmt->fetchColumn())]);
+        break;
+
+    case 'mark_notification_read':
+        $nid = intval($_POST['notification_id'] ?? 0);
+        if ($nid) {
+            $db->prepare("UPDATE pilot_notifications SET is_read = 1 WHERE id = ? AND user_id = ?")->execute([$nid, getUserId()]);
+        }
+        echo json_encode(['success'=>true]);
+        break;
+
+    case 'mark_notifications_read':
+        $before = $_POST['before'] ?? null;
+        if ($before) {
+            $db->prepare("UPDATE pilot_notifications SET is_read = 1 WHERE user_id = ? AND created_at <= FROM_UNIXTIME(?)")->execute([getUserId(), intval($before)]);
+        } else {
+            $db->prepare("UPDATE pilot_notifications SET is_read = 1 WHERE user_id = ?")->execute([getUserId()]);
+        }
         echo json_encode(['success'=>true]);
         break;
 

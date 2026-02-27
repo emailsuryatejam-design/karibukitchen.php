@@ -123,6 +123,21 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
         .date-nav .btn-date.active { background:var(--primary); color:#fff; }
         .date-nav input[type="date"] { border:1px solid #dee2e6; border-radius:6px; padding:4px 8px; font-size:0.85rem; font-weight:600; color:var(--primary); max-width:150px; }
         .date-future-badge { background:var(--accent); color:#fff; font-size:0.65rem; padding:2px 6px; border-radius:8px; }
+        /* Notification panel */
+        .notif-panel { position:fixed; top:56px; right:8px; width:320px; max-height:400px; background:#fff; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,0.2); z-index:2000; display:none; overflow:hidden; }
+        .notif-panel.open { display:block; }
+        .notif-panel-header { background:var(--primary); color:#fff; padding:12px 16px; font-weight:600; display:flex; justify-content:space-between; align-items:center; }
+        .notif-list { max-height:320px; overflow-y:auto; }
+        .notif-item { padding:12px 16px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.2s; }
+        .notif-item:hover { background:#f8f9fa; }
+        .notif-item.unread { background:#f0f7ff; border-left:3px solid var(--primary); }
+        .notif-item .notif-title { font-weight:600; font-size:0.85rem; color:#333; }
+        .notif-item .notif-body { font-size:0.8rem; color:#666; margin-top:2px; }
+        .notif-item .notif-time { font-size:0.7rem; color:#999; margin-top:4px; }
+        .notif-empty { text-align:center; padding:30px; color:#aaa; }
+        /* Push enable banner */
+        .push-banner { background:linear-gradient(135deg,#667eea,#764ba2); color:#fff; padding:10px 16px; margin-bottom:12px; border-radius:10px; display:flex; align-items:center; gap:10px; }
+        .push-banner button { background:#fff; color:#764ba2; border:none; border-radius:20px; padding:6px 16px; font-weight:600; font-size:0.85rem; cursor:pointer; white-space:nowrap; }
         .hamburger { display:none; background:none; border:none; color:#fff; font-size:1.5rem; cursor:pointer; padding:4px 8px; }
         .drawer-handle { display:none; }
 
@@ -305,6 +320,10 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
                 <i class="bi bi-person-circle"></i> <span class="badge bg-light text-dark"><?= ucfirst($role) ?></span>
             </span>
             <span class="text-light opacity-75 d-none d-md-inline" style="font-size:0.8rem;"><i class="bi bi-calendar3"></i> <?= date('D, M j', strtotime($today)) ?><?= $isToday ? '' : ' <span class="badge bg-warning text-dark" style="font-size:0.6rem;">FUTURE</span>' ?></span>
+            <button class="btn btn-outline-light btn-sm position-relative" id="notifBell" onclick="toggleNotifPanel()" title="Notifications">
+                <i class="bi bi-bell"></i>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="notifBadge" style="display:none;font-size:0.55rem;">0</span>
+            </button>
             <a href="logout.php" class="btn btn-outline-light btn-sm" title="Logout"><i class="bi bi-box-arrow-right"></i><span class="d-none d-sm-inline"> Logout</span></a>
         </div>
     </nav>
@@ -422,6 +441,27 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
         </div>
     </div>
 
+    <!-- Notification Panel -->
+    <div class="notif-panel no-print" id="notifPanel">
+        <div class="notif-panel-header">
+            <span><i class="bi bi-bell-fill"></i> Notifications</span>
+            <button onclick="markAllRead()" style="background:none;border:none;color:rgba(255,255,255,0.7);font-size:0.8rem;cursor:pointer;">Mark all read</button>
+        </div>
+        <div class="notif-list" id="notifList">
+            <div class="notif-empty"><i class="bi bi-bell-slash" style="font-size:2rem;"></i><br>No notifications</div>
+        </div>
+    </div>
+
+    <!-- Push Permission Banner (shown if not subscribed) -->
+    <?php if ($activeKitchenId): ?>
+    <div id="pushBanner" class="push-banner no-print mx-3 mt-2" style="display:none;">
+        <i class="bi bi-bell-fill" style="font-size:1.3rem;"></i>
+        <span style="flex:1;font-size:0.85rem;">Enable notifications to get alerts when orders or supplies are ready</span>
+        <button onclick="enablePush()">Enable</button>
+        <button onclick="dismissPushBanner()" style="background:none;color:rgba(255,255,255,0.6);padding:4px 8px;font-size:1rem;">&times;</button>
+    </div>
+    <?php endif; ?>
+
     <!-- Footer -->
     <footer class="text-center py-3 no-print" style="background:#1a1a2e; color:rgba(255,255,255,0.5); font-size:0.8rem;">
         Powered by <strong style="color:rgba(255,255,255,0.7);">VyomaAI Studios</strong>
@@ -509,6 +549,174 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
                 deferredPrompt = null;
             });
         }
+    });
+
+    // ============================================================
+    // PUSH NOTIFICATIONS
+    // ============================================================
+    const VAPID_PUBLIC_KEY = '<?= defined("VAPID_PUBLIC_KEY") ? VAPID_PUBLIC_KEY : "BBLfpB1Dh8FKBNnMdyh-LYAY7zriHOzBpzqW5hjexpN95DcsPlw7RPuNf-8vhlZRH2fg5fWywPXlyU4poPpTchU" ?>';
+
+    // Convert VAPID key from base64url to Uint8Array
+    function urlBase64ToUint8Array(base64String) {
+        const padding = '='.repeat((4 - base64String.length % 4) % 4);
+        const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+        const rawData = window.atob(base64);
+        return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
+    }
+
+    // Check push subscription status on load
+    async function checkPushStatus() {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+
+        try {
+            const reg = await navigator.serviceWorker.ready;
+            const sub = await reg.pushManager.getSubscription();
+
+            if (!sub && Notification.permission !== 'denied' && !localStorage.getItem('pushBannerDismissed')) {
+                const banner = document.getElementById('pushBanner');
+                if (banner) banner.style.display = 'flex';
+            }
+        } catch (e) {
+            console.log('Push check error:', e);
+        }
+    }
+
+    // Enable push notifications
+    async function enablePush() {
+        try {
+            const permission = await Notification.requestPermission();
+            if (permission !== 'granted') {
+                alert('Please allow notifications in your browser settings to receive alerts.');
+                return;
+            }
+
+            const reg = await navigator.serviceWorker.ready;
+            const sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+            });
+
+            // Send subscription to server
+            const subJson = sub.toJSON();
+            const res = await $.post('api.php', {
+                action: 'save_push_subscription',
+                endpoint: subJson.endpoint,
+                p256dh: subJson.keys.p256dh,
+                auth: subJson.keys.auth
+            });
+
+            if (res.success) {
+                const banner = document.getElementById('pushBanner');
+                if (banner) banner.style.display = 'none';
+                // Show confirmation
+                new Notification('Karibu Kitchen', {
+                    body: 'Notifications enabled! You\'ll be alerted when orders and supplies are ready.',
+                    icon: '/icons/icon-192.png'
+                });
+            }
+        } catch (e) {
+            console.error('Push subscription error:', e);
+            alert('Could not enable notifications. Please try again.');
+        }
+    }
+
+    function dismissPushBanner() {
+        document.getElementById('pushBanner').style.display = 'none';
+        localStorage.setItem('pushBannerDismissed', '1');
+    }
+
+    // Notification panel
+    function toggleNotifPanel() {
+        const panel = document.getElementById('notifPanel');
+        panel.classList.toggle('open');
+        if (panel.classList.contains('open')) {
+            loadNotifications();
+        }
+    }
+
+    // Close panel when clicking outside
+    document.addEventListener('click', function(e) {
+        const panel = document.getElementById('notifPanel');
+        const bell = document.getElementById('notifBell');
+        if (panel && !panel.contains(e.target) && !bell.contains(e.target)) {
+            panel.classList.remove('open');
+        }
+    });
+
+    // Load notifications from server
+    function loadNotifications() {
+        $.post('api.php', { action: 'get_notifications' }, function(res) {
+            if (!res.success) return;
+            const list = document.getElementById('notifList');
+            if (!res.notifications || res.notifications.length === 0) {
+                list.innerHTML = '<div class="notif-empty"><i class="bi bi-bell-slash" style="font-size:2rem;"></i><br>No notifications</div>';
+                return;
+            }
+            let html = '';
+            res.notifications.forEach(n => {
+                const cls = n.is_read == 0 ? 'unread' : '';
+                const time = timeAgo(n.created_at);
+                html += '<div class="notif-item ' + cls + '" onclick="notifClick(\'' + (n.url || '') + '\',' + n.id + ')">' +
+                    '<div class="notif-title">' + escHtml(n.title) + '</div>' +
+                    '<div class="notif-body">' + escHtml(n.body) + '</div>' +
+                    '<div class="notif-time">' + time + '</div></div>';
+            });
+            list.innerHTML = html;
+        }, 'json');
+    }
+
+    function notifClick(url, id) {
+        $.post('api.php', { action: 'mark_notification_read', notification_id: id });
+        if (url) window.location.href = url;
+        document.getElementById('notifPanel').classList.remove('open');
+    }
+
+    function markAllRead() {
+        $.post('api.php', { action: 'mark_notifications_read' }, function(res) {
+            if (res.success) {
+                loadNotifications();
+                document.getElementById('notifBadge').style.display = 'none';
+            }
+        }, 'json');
+    }
+
+    function escHtml(s) {
+        const div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+    }
+
+    function timeAgo(dateStr) {
+        const now = new Date();
+        const d = new Date(dateStr);
+        const diff = Math.floor((now - d) / 1000);
+        if (diff < 60) return 'Just now';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+        return Math.floor(diff / 86400) + 'd ago';
+    }
+
+    // Poll for new notifications every 30 seconds
+    function checkNewNotifications() {
+        $.post('api.php', { action: 'get_unread_count' }, function(res) {
+            if (res.success && res.count > 0) {
+                const badge = document.getElementById('notifBadge');
+                badge.textContent = res.count > 9 ? '9+' : res.count;
+                badge.style.display = 'inline-block';
+                // Animate bell
+                document.getElementById('notifBell').classList.add('animate__animated', 'animate__swing');
+                setTimeout(() => document.getElementById('notifBell').classList.remove('animate__animated', 'animate__swing'), 1000);
+            } else {
+                document.getElementById('notifBadge').style.display = 'none';
+            }
+        }, 'json');
+    }
+
+    // Init
+    $(document).ready(function() {
+        checkPushStatus();
+        checkNewNotifications();
+        setInterval(checkNewNotifications, 30000); // Check every 30s
     });
     </script>
 </body>

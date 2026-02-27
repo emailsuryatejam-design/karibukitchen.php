@@ -1,4 +1,4 @@
-const CACHE_NAME = 'karibu-kitchen-v1';
+const CACHE_NAME = 'karibu-kitchen-v2';
 const OFFLINE_URL = '/offline.html';
 
 // Assets to cache on install
@@ -72,4 +72,78 @@ self.addEventListener('fetch', event => {
             });
         })
     );
+});
+
+// ============================================================
+// PUSH NOTIFICATIONS
+// ============================================================
+self.addEventListener('push', event => {
+    let data = { title: 'Karibu Kitchen', body: 'You have a new update', url: '/app.php' };
+
+    if (event.data) {
+        try {
+            data = event.data.json();
+        } catch (e) {
+            data.body = event.data.text();
+        }
+    }
+
+    const options = {
+        body: data.body,
+        icon: data.icon || '/icons/icon-192.png',
+        badge: data.badge || '/icons/icon-72.png',
+        vibrate: [200, 100, 200, 100, 200],
+        tag: data.tag || 'karibu-notification',
+        renotify: true,
+        requireInteraction: true,
+        data: {
+            url: data.url || '/app.php',
+            timestamp: data.timestamp || Date.now()
+        },
+        actions: [
+            { action: 'open', title: 'Open App' },
+            { action: 'dismiss', title: 'Dismiss' }
+        ]
+    };
+
+    event.waitUntil(
+        self.registration.showNotification(data.title, options)
+    );
+});
+
+// Handle notification click
+self.addEventListener('notificationclick', event => {
+    event.notification.close();
+
+    if (event.action === 'dismiss') return;
+
+    const url = event.notification.data?.url || '/app.php';
+
+    event.waitUntil(
+        clients.matchAll({ type: 'window', includeUncontrolled: true })
+            .then(windowClients => {
+                // Focus existing window if found
+                for (const client of windowClients) {
+                    if (client.url.includes('app.php') && 'focus' in client) {
+                        client.navigate(url);
+                        return client.focus();
+                    }
+                }
+                // Open new window
+                return clients.openWindow(url);
+            })
+    );
+});
+
+// Handle notification close
+self.addEventListener('notificationclose', event => {
+    // Mark notification as read via API
+    const timestamp = event.notification.data?.timestamp;
+    if (timestamp) {
+        fetch('/api.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'action=mark_notifications_read&before=' + timestamp
+        }).catch(() => {});
+    }
 });
