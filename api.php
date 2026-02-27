@@ -29,8 +29,19 @@ switch ($action) {
         if (!$check->fetch()) { echo json_encode(['success'=>false,'message'=>'Session not open']); exit; }
         $db->beginTransaction();
         try {
-            $stmt = $db->prepare("INSERT INTO pilot_requisitions (session_id,item_id,portions_requested,carryover_portions,notes) VALUES (?,?,?,?,?)");
-            foreach ($items as $item) $stmt->execute([$sessionId, intval($item['item_id']), intval($item['portions']), intval($item['carryover']??0), $item['notes']??'']);
+            $stmt = $db->prepare("INSERT INTO pilot_requisitions (session_id, item_id, portions_requested, required_kg, roundoff_kg, instock_kg, order_kg, carryover_portions, notes) VALUES (?,?,?,?,?,?,?,0,?)");
+            foreach ($items as $item) {
+                $stmt->execute([
+                    $sessionId,
+                    intval($item['item_id']),
+                    intval($item['portions']),
+                    round(floatval($item['required_kg']), 2),
+                    round(floatval($item['roundoff_kg']), 2),
+                    round(floatval($item['instock_kg']), 2),
+                    round(floatval($item['order_kg']), 2),
+                    $item['notes'] ?? ''
+                ]);
+            }
             $db->prepare("UPDATE pilot_daily_sessions SET status='requisition_sent' WHERE id=?")->execute([$sessionId]);
             $db->commit();
             echo json_encode(['success'=>true]);
@@ -43,8 +54,15 @@ switch ($action) {
         if (!$sessionId || empty($items)) { echo json_encode(['success'=>false,'message'=>'Missing data']); exit; }
         $db->beginTransaction();
         try {
-            $stmt = $db->prepare("INSERT INTO pilot_store_supplies (requisition_id,portions_supplied,notes,supplied_by) VALUES (?,?,?,?)");
-            foreach ($items as $item) $stmt->execute([intval($item['requisition_id']), intval($item['supplied']), $item['notes']??'', getUserId()]);
+            $stmt = $db->prepare("INSERT INTO pilot_store_supplies (requisition_id, kg_supplied, portions_supplied, notes, supplied_by) VALUES (?,?,0,?,?)");
+            foreach ($items as $item) {
+                $stmt->execute([
+                    intval($item['requisition_id']),
+                    round(floatval($item['kg_supplied']), 2),
+                    $item['notes'] ?? '',
+                    getUserId()
+                ]);
+            }
             $db->prepare("UPDATE pilot_daily_sessions SET status='supplied' WHERE id=?")->execute([$sessionId]);
             $db->commit();
             echo json_encode(['success'=>true]);
@@ -58,12 +76,14 @@ switch ($action) {
         if (!$sessionId || empty($items)) { echo json_encode(['success'=>false,'message'=>'Missing data']); exit; }
         $db->beginTransaction();
         try {
-            $dcStmt = $db->prepare("INSERT INTO pilot_day_close (session_id,item_id,portions_total,portions_consumed,portions_remaining) VALUES (?,?,?,?,?)");
-            $skStmt = $db->prepare("INSERT INTO pilot_kitchen_stock (item_id,kitchen_id,portions_available) VALUES (?,?,?) ON DUPLICATE KEY UPDATE portions_available=VALUES(portions_available)");
+            $dcStmt = $db->prepare("INSERT INTO pilot_day_close (session_id, item_id, kg_total, kg_remaining, portions_total, portions_consumed, portions_remaining) VALUES (?,?,?,?,0,0,0)");
+            $skStmt = $db->prepare("INSERT INTO pilot_kitchen_stock (item_id, kitchen_id, kg_available, portions_available) VALUES (?,?,?,0) ON DUPLICATE KEY UPDATE kg_available=VALUES(kg_available)");
             foreach ($items as $item) {
-                $itemId=intval($item['item_id']); $total=intval($item['total']); $remaining=intval($item['remaining']); $consumed=$total-$remaining;
-                $dcStmt->execute([$sessionId,$itemId,$total,$consumed,$remaining]);
-                $skStmt->execute([$itemId,$kitchenId,$remaining]);
+                $itemId = intval($item['item_id']);
+                $kgTotal = round(floatval($item['kg_total']), 2);
+                $kgRemaining = round(floatval($item['kg_remaining']), 2);
+                $dcStmt->execute([$sessionId, $itemId, $kgTotal, $kgRemaining]);
+                $skStmt->execute([$itemId, $kitchenId, $kgRemaining]);
             }
             $db->prepare("UPDATE pilot_daily_sessions SET status='day_closed' WHERE id=?")->execute([$sessionId]);
             $db->commit();
@@ -108,12 +128,16 @@ switch ($action) {
 
     case 'add_item':
         if (getUserRole()!=='admin') { echo json_encode(['success'=>false,'message'=>'Not authorized']); exit; }
-        $name=trim($_POST['name']??''); $category=trim($_POST['category']??''); $uw=floatval($_POST['unit_weight']??0); $wu=trim($_POST['weight_unit']??'g'); $ppu=intval($_POST['portions_per_unit']??1);
-        if (!$name||!$category||$uw<=0) { echo json_encode(['success'=>false,'message'=>'Fill all fields']); exit; }
-        $db->prepare("INSERT INTO pilot_items (name,category,unit_weight,weight_unit,portions_per_unit) VALUES (?,?,?,?,?)")->execute([$name,$category,$uw,$wu,$ppu]);
+        $name = trim($_POST['name'] ?? '');
+        $category = trim($_POST['category'] ?? '');
+        $portionGrams = floatval($_POST['portion_grams'] ?? 300);
+        $portionWeightKg = round($portionGrams / 1000, 3);
+        if (!$name || !$category || $portionGrams <= 0) { echo json_encode(['success'=>false,'message'=>'Fill all fields']); exit; }
+        $portionsPerKg = round(1 / $portionWeightKg, 2);
+        $db->prepare("INSERT INTO pilot_items (name, category, unit_weight, weight_unit, portions_per_unit, portion_weight_kg) VALUES (?,?,?,?,?,?)")
+            ->execute([$name, $category, $portionGrams, 'g', $portionsPerKg, $portionWeightKg]);
         $newItemId = $db->lastInsertId();
-        // Init stock for all kitchens
-        $db->prepare("INSERT IGNORE INTO pilot_kitchen_stock (item_id,kitchen_id,portions_available) SELECT ?, id, 0 FROM pilot_kitchens")->execute([$newItemId]);
+        $db->prepare("INSERT IGNORE INTO pilot_kitchen_stock (item_id, kitchen_id, portions_available, kg_available) SELECT ?, id, 0, 0 FROM pilot_kitchens")->execute([$newItemId]);
         echo json_encode(['success'=>true]);
         break;
 
