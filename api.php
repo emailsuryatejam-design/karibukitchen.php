@@ -82,6 +82,28 @@ switch ($action) {
         } catch (Exception $e) { $db->rollBack(); echo json_encode(['success'=>false,'message'=>$e->getMessage()]); }
         break;
 
+    case 'add_substitutes':
+        $sessionId = intval($_POST['session_id'] ?? 0);
+        $items = json_decode($_POST['items'] ?? '[]', true);
+        if (!$sessionId || empty($items)) { echo json_encode(['success'=>false,'message'=>'Missing data']); exit; }
+        $sess = $db->prepare("SELECT * FROM pilot_daily_sessions WHERE id=?"); $sess->execute([$sessionId]); $sess = $sess->fetch();
+        if (!$sess) { echo json_encode(['success'=>false,'message'=>'Session not found']); exit; }
+        $db->beginTransaction();
+        try {
+            $stmt = $db->prepare("INSERT INTO pilot_requisitions (session_id, item_id, portions_requested, required_kg, roundoff_kg, instock_kg, order_kg, carryover_portions, notes) VALUES (?,?,0,?,?,0,?,0,?)");
+            foreach ($items as $item) {
+                $itemId = intval($item['item_id'] ?? 0);
+                $orderKg = round(floatval($item['order_kg']), 2);
+                if ($itemId < 1 || $orderKg <= 0) continue;
+                $stmt->execute([$sessionId, $itemId, $orderKg, $orderKg, $orderKg, $item['notes'] ?? '']);
+            }
+            // Set status back to requisition_sent so store sees the new items
+            $db->prepare("UPDATE pilot_daily_sessions SET status='requisition_sent' WHERE id=?")->execute([$sessionId]);
+            $db->commit();
+            echo json_encode(['success'=>true]);
+        } catch (Exception $e) { $db->rollBack(); echo json_encode(['success'=>false,'message'=>$e->getMessage()]); }
+        break;
+
     case 'day_close':
         $sessionId = intval($_POST['session_id'] ?? 0);
         $kitchenId = intval($_POST['kitchen_id'] ?? 0);

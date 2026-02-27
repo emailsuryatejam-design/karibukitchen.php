@@ -634,34 +634,154 @@ function include_requisition($db, $session, $today, $kitchenId) {
 // ============================================================
 function include_review_supply($db, $session) {
     if (!$session) { echo '<div class="alert alert-warning">No session for today.</div>'; return; }
-    $stmt = $db->prepare("SELECT r.*, i.name, i.category, COALESCE(ss.kg_supplied, 0) as supplied_kg, ss.notes as supply_notes FROM pilot_requisitions r JOIN pilot_items i ON r.item_id=i.id LEFT JOIN pilot_store_supplies ss ON ss.requisition_id=r.id WHERE r.session_id=? ORDER BY i.category, i.name");
+    if ($session['status'] === 'open' || $session['status'] === 'requisition_sent') {
+        echo '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Waiting for store to supply items.</div>';
+        return;
+    }
+    $stmt = $db->prepare("SELECT r.*, i.name, i.category, i.portion_weight_kg, COALESCE(ss.kg_supplied, 0) as supplied_kg, ss.notes as supply_notes FROM pilot_requisitions r JOIN pilot_items i ON r.item_id=i.id LEFT JOIN pilot_store_supplies ss ON ss.requisition_id=r.id WHERE r.session_id=? ORDER BY i.category, i.name");
     $stmt->execute([$session['id']]); $items = $stmt->fetchAll();
+    $totalOrdered = array_sum(array_column($items, 'order_kg'));
+    $totalSupplied = array_sum(array_column($items, 'supplied_kg'));
+    $shortages = array_filter($items, fn($it) => $it['supplied_kg'] < $it['order_kg']);
+
+    // Get all active items for substitute dropdown
+    $allItems = $db->query("SELECT id, name, category, portion_weight_kg FROM pilot_items WHERE is_active=1 ORDER BY category, name")->fetchAll();
 ?>
-    <h4 class="mb-3">Review Supply vs Order</h4>
-    <p class="text-muted">All quantities in <span class="uom-badge">KG</span></p>
-    <div id="printSupplyReview" class="table-responsive">
-        <table class="table table-striped" id="supplyReviewTable">
-            <thead><tr><th>#</th><th>Item</th><th>Category</th><th>Order (kg)</th><th>Supplied (kg)</th><th>Difference</th><th>Store Notes</th></tr></thead>
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <h4 class="mb-0">Review Supply</h4>
+        <?php if (count($shortages)): ?>
+            <span class="badge bg-danger fs-6"><i class="bi bi-exclamation-triangle"></i> <?= count($shortages) ?> Shortage(s)</span>
+        <?php else: ?>
+            <span class="badge bg-success fs-6"><i class="bi bi-check-circle"></i> All Supplied</span>
+        <?php endif; ?>
+    </div>
+
+    <!-- Summary cards -->
+    <div class="row g-3 mb-3">
+        <div class="col-auto"><div class="bg-white rounded-3 px-3 py-2 border"><small class="text-muted d-block">Ordered</small><strong class="fs-5"><?=number_format($totalOrdered,1)?> kg</strong></div></div>
+        <div class="col-auto"><div class="bg-white rounded-3 px-3 py-2 border"><small class="text-muted d-block">Supplied</small><strong class="fs-5 text-success"><?=number_format($totalSupplied,1)?> kg</strong></div></div>
+        <?php if (count($shortages)): $shortKg = $totalOrdered - $totalSupplied; ?>
+        <div class="col-auto"><div class="bg-white rounded-3 px-3 py-2 border border-danger"><small class="text-muted d-block">Short</small><strong class="fs-5 text-danger"><?=number_format($shortKg,1)?> kg</strong></div></div>
+        <?php endif; ?>
+    </div>
+
+    <?php if (count($shortages)): ?>
+    <!-- Shortage Alert -->
+    <div class="alert alert-danger d-flex align-items-start gap-2 mb-3">
+        <i class="bi bi-exclamation-triangle-fill fs-5 mt-1"></i>
+        <div>
+            <strong>Store could not fully supply these items:</strong>
+            <ul class="mb-1 mt-1">
+            <?php foreach($shortages as $s):
+                $shortBy = $s['order_kg'] - $s['supplied_kg'];
+            ?>
+                <li><strong><?=htmlspecialchars($s['name'])?></strong>: ordered <?=number_format($s['order_kg'],2)?> kg, got <?=number_format($s['supplied_kg'],2)?> kg <span class="text-danger fw-bold">(short <?=number_format($shortBy,2)?> kg)</span>
+                <?php if ($s['supply_notes']): ?><br><small class="text-muted"><i class="bi bi-chat-left-text"></i> Store: "<?=htmlspecialchars($s['supply_notes'])?>"</small><?php endif; ?>
+                </li>
+            <?php endforeach; ?>
+            </ul>
+            <small class="text-muted">You can add substitute items below if needed.</small>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- Items table -->
+    <div id="printSupplyReview">
+        <h5 class="mb-2 d-none d-print-block">Supply Review - <?= date('D, M j, Y') ?></h5>
+        <div class="table-responsive">
+        <table class="table table-sm" id="supplyReviewTable">
+            <thead><tr><th>#</th><th>Item</th><th class="text-end">Ordered</th><th class="text-end">Round Off</th><th class="text-end">Supplied</th><th class="text-end">Diff</th><th>Store Notes</th></tr></thead>
             <tbody>
             <?php $n=1; foreach($items as $it):
                 $diff = $it['supplied_kg'] - $it['order_kg'];
-                $cls = $diff < 0 ? 'shortage' : ($diff > 0 ? 'surplus' : '');
+                $rowBg = $diff < 0 ? ' style="background:#fff5f5"' : '';
             ?>
-            <tr>
-                <td><?=$n++?></td><td><?=htmlspecialchars($it['name'])?></td><td><?=htmlspecialchars($it['category'])?></td>
-                <td><strong><?=number_format($it['order_kg'],2)?></strong></td>
-                <td><strong><?=number_format($it['supplied_kg'],2)?></strong></td>
-                <td class="<?=$cls?>"><?=$diff>0?'+'.number_format($diff,2):($diff<0?number_format($diff,2):'-')?></td>
+            <tr<?=$rowBg?>>
+                <td><?=$n++?></td>
+                <td><strong><?=htmlspecialchars($it['name'])?></strong><br><small class="text-muted"><?=htmlspecialchars($it['category'])?></small></td>
+                <td class="text-end"><?=number_format($it['order_kg'],2)?></td>
+                <td class="text-end"><?=number_format($it['roundoff_kg'],2)?></td>
+                <td class="text-end fw-bold"><?=number_format($it['supplied_kg'],2)?></td>
+                <?php if ($diff < 0): ?>
+                    <td class="text-end shortage"><i class="bi bi-exclamation-triangle"></i> <?=number_format($diff,2)?></td>
+                <?php elseif ($diff > 0): ?>
+                    <td class="text-end surplus">+<?=number_format($diff,2)?></td>
+                <?php else: ?>
+                    <td class="text-end text-muted">—</td>
+                <?php endif; ?>
                 <td><?=htmlspecialchars($it['supply_notes']??'')?></td>
             </tr>
             <?php endforeach; ?>
             </tbody>
         </table>
+        </div>
     </div>
+
+    <!-- Add Substitute Items -->
+    <?php if (count($shortages)): ?>
+    <div class="card mb-3 border-warning">
+        <div class="card-header py-2 bg-warning text-dark d-flex align-items-center">
+            <i class="bi bi-arrow-repeat me-2"></i><strong>Add Substitute Items</strong>
+            <small class="text-muted ms-2">( to replace shortages )</small>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-3" style="font-size:0.85rem">Pick a substitute item and enter the kg you need. This sends a new request to the store.</p>
+            <div id="substituteRows"></div>
+            <button type="button" class="btn btn-outline-warning btn-sm mt-2" id="addSubstituteRow"><i class="bi bi-plus-lg"></i> Add Substitute</button>
+            <hr>
+            <button type="button" class="btn btn-primary" id="submitSubstitutes" style="display:none"><i class="bi bi-send"></i> Send to Store</button>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="no-print d-flex gap-2">
-        <button class="btn btn-outline-primary" onclick="printSection('printSupplyReview')"><i class="bi bi-printer"></i> Print</button>
-        <button class="btn btn-outline-success" onclick="downloadCSV('supplyReviewTable','supply_review_<?=date('Y-m-d')?>')"><i class="bi bi-download"></i> CSV</button>
+        <button class="btn btn-outline-primary btn-sm" onclick="printSection('printSupplyReview')"><i class="bi bi-printer"></i> Print</button>
+        <button class="btn btn-outline-success btn-sm" onclick="downloadCSV('supplyReviewTable','supply_review_<?=date('Y-m-d')?>')"><i class="bi bi-download"></i> CSV</button>
     </div>
+
+    <script>
+    $(document).ready(function(){
+        // Build item options for dropdown
+        const itemOptions = <?= json_encode(array_map(fn($i) => ['id'=>$i['id'],'name'=>$i['name'],'cat'=>$i['category'],'pwkg'=>$i['portion_weight_kg']], $allItems)) ?>;
+        let optionsHtml = '<option value="">-- Pick item --</option>';
+        itemOptions.forEach(i => { optionsHtml += '<option value="'+i.id+'" data-pwkg="'+i.pwkg+'">'+i.name+' ('+i.cat+')</option>'; });
+
+        let subCount = 0;
+        $('#addSubstituteRow').on('click', function(){
+            subCount++;
+            const html = '<div class="sub-row d-flex align-items-center gap-2 mb-2" data-idx="'+subCount+'">' +
+                '<select class="form-select form-select-sm sub-item" style="flex:2">'+optionsHtml+'</select>' +
+                '<div class="input-group input-group-sm" style="flex:1;max-width:140px"><input type="number" step="0.1" min="0.1" class="form-control text-center sub-kg" placeholder="0" value=""><span class="input-group-text">kg</span></div>' +
+                '<input type="text" class="form-control form-control-sm sub-notes" placeholder="Replaces..." style="flex:1">' +
+                '<button type="button" class="btn btn-outline-danger btn-sm remove-sub"><i class="bi bi-x-lg"></i></button></div>';
+            $('#substituteRows').append(html);
+            $('#submitSubstitutes').show();
+        });
+        $(document).on('click', '.remove-sub', function(){
+            $(this).closest('.sub-row').remove();
+            if ($('#substituteRows .sub-row').length === 0) $('#submitSubstitutes').hide();
+        });
+
+        // Submit substitutes
+        $('#submitSubstitutes').on('click', function(){
+            let items = [];
+            $('#substituteRows .sub-row').each(function(){
+                const itemId = parseInt($(this).find('.sub-item').val()) || 0;
+                const kg = parseFloat($(this).find('.sub-kg').val()) || 0;
+                const notes = $(this).find('.sub-notes').val() || '';
+                if (itemId && kg > 0) {
+                    items.push({ item_id: itemId, order_kg: kg, notes: 'Substitute: ' + notes });
+                }
+            });
+            if (!items.length) { alert('Add at least one substitute item with kg.'); return; }
+            if (!confirm('Send ' + items.length + ' substitute item(s) to the store?')) return;
+            $.post('api.php', {action:'add_substitutes', session_id:<?=$session['id']?>, items:JSON.stringify(items)}, function(res){
+                if (res.success) { alert('Substitutes sent to store!'); location.reload(); }
+                else alert(res.message || 'Error');
+            }, 'json');
+        });
+    });
+    </script>
 <?php }
 
 // ============================================================
@@ -771,59 +891,182 @@ function include_supply($db, $today, $kitchenId) {
     if ($session['status']==='supplied' || $session['status']==='day_closed') {
         $stmt = $db->prepare("SELECT r.*, i.name, i.category, COALESCE(ss.kg_supplied,0) as supplied_kg, ss.notes as supply_notes FROM pilot_requisitions r JOIN pilot_items i ON r.item_id=i.id LEFT JOIN pilot_store_supplies ss ON ss.requisition_id=r.id WHERE r.session_id=? ORDER BY i.category, i.name");
         $stmt->execute([$session['id']]); $items = $stmt->fetchAll();
-        echo '<h4 class="mb-3">Supply Log <span class="badge bg-success">Completed</span></h4>';
-        echo '<p class="text-muted">All quantities in <span class="uom-badge">KG</span></p>';
-        echo '<div id="printStoreLog" class="table-responsive"><table class="table table-striped" id="storeLogTable"><thead><tr><th>#</th><th>Item</th><th>Order (kg)</th><th>Supplied (kg)</th><th>Diff</th><th>Notes</th></tr></thead><tbody>';
+        $totalOrdered = array_sum(array_column($items, 'order_kg'));
+        $totalSupplied = array_sum(array_column($items, 'supplied_kg'));
+        $shortages = array_filter($items, fn($it) => $it['supplied_kg'] < $it['order_kg']);
+        echo '<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">';
+        echo '<h4 class="mb-0">Supply Log</h4>';
+        echo '<span class="badge bg-success fs-6"><i class="bi bi-check-circle"></i> Completed</span>';
+        echo '</div>';
+        echo '<div class="row g-3 mb-3">';
+        echo '<div class="col-auto"><div class="bg-white rounded-3 px-3 py-2 border"><small class="text-muted d-block">Ordered</small><strong class="fs-5">'.number_format($totalOrdered,1).' kg</strong></div></div>';
+        echo '<div class="col-auto"><div class="bg-white rounded-3 px-3 py-2 border"><small class="text-muted d-block">Supplied</small><strong class="fs-5 text-success">'.number_format($totalSupplied,1).' kg</strong></div></div>';
+        if (count($shortages)) {
+            $shortKg = $totalOrdered - $totalSupplied;
+            echo '<div class="col-auto"><div class="bg-white rounded-3 px-3 py-2 border border-danger"><small class="text-muted d-block">Shortages</small><strong class="fs-5 text-danger">'.count($shortages).' items ('.number_format($shortKg,1).' kg)</strong></div></div>';
+        }
+        echo '</div>';
+        echo '<div id="printStoreLog" class="table-responsive"><table class="table table-sm" id="storeLogTable"><thead><tr><th>#</th><th>Item</th><th class="text-end">Ordered</th><th class="text-end">Supplied</th><th class="text-end">Diff</th><th>Notes</th></tr></thead><tbody>';
         $n=1;
         foreach($items as $it) {
             $d = $it['supplied_kg'] - $it['order_kg'];
-            $c = $d<0?'shortage':($d>0?'surplus':'');
-            echo '<tr><td>'.$n++.'</td><td>'.htmlspecialchars($it['name']).'</td><td>'.number_format($it['order_kg'],2).'</td><td>'.number_format($it['supplied_kg'],2).'</td>';
-            echo '<td class="'.$c.'">'.($d>0?'+'.number_format($d,2):($d<0?number_format($d,2):'-')).'</td><td>'.htmlspecialchars($it['supply_notes']??'').'</td></tr>';
+            $rowCls = $d < 0 ? ' style="background:#fff5f5"' : '';
+            echo '<tr'.$rowCls.'><td>'.$n++.'</td><td><strong>'.htmlspecialchars($it['name']).'</strong></td>';
+            echo '<td class="text-end">'.number_format($it['order_kg'],2).'</td>';
+            echo '<td class="text-end">'.number_format($it['supplied_kg'],2).'</td>';
+            if ($d < 0) echo '<td class="text-end shortage"><i class="bi bi-exclamation-triangle"></i> '.number_format($d,2).'</td>';
+            elseif ($d > 0) echo '<td class="text-end surplus">+'.number_format($d,2).'</td>';
+            else echo '<td class="text-end text-muted">—</td>';
+            echo '<td>'.htmlspecialchars($it['supply_notes']??'').'</td></tr>';
         }
         echo '</tbody></table></div>';
-        echo '<div class="no-print d-flex gap-2"><button class="btn btn-outline-primary" onclick="printSection(\'printStoreLog\')"><i class="bi bi-printer"></i> Print</button><button class="btn btn-outline-success" onclick="downloadCSV(\'storeLogTable\',\'store_log_'.$today.'\')"><i class="bi bi-download"></i> CSV</button></div>';
+        echo '<div class="no-print d-flex gap-2"><button class="btn btn-outline-primary btn-sm" onclick="printSection(\'printStoreLog\')"><i class="bi bi-printer"></i> Print</button><button class="btn btn-outline-success btn-sm" onclick="downloadCSV(\'storeLogTable\',\'store_log_'.$today.'\')"><i class="bi bi-download"></i> CSV</button></div>';
         return;
     }
 
     // Supply form
     $stmt = $db->prepare("SELECT r.*, i.name, i.category FROM pilot_requisitions r JOIN pilot_items i ON r.item_id=i.id WHERE r.session_id=? ORDER BY i.category, i.name");
     $stmt->execute([$session['id']]); $items = $stmt->fetchAll();
+    $categories = []; foreach($items as $item) $categories[$item['category']][] = $item;
+    $totalOrderKg = array_sum(array_column($items, 'order_kg'));
 ?>
-    <h4 class="mb-3">Supply Items <small class="text-muted">| All in KG</small></h4>
+    <div class="d-flex align-items-center gap-3 mb-2 flex-wrap">
+        <h4 class="mb-0">Supply Items</h4>
+        <span class="badge bg-warning text-dark fs-6"><i class="bi bi-clock"></i> Pending</span>
+        <span class="text-muted ms-auto" style="font-size:0.85rem"><i class="bi bi-calendar"></i> <?= date('D, M j, Y') ?></span>
+    </div>
+    <p class="text-muted mb-3" style="font-size:0.85rem"><i class="bi bi-info-circle"></i> Change supply qty if stock is short. Add a reason for any shortages — the chef will be notified.</p>
+
     <form id="supplyForm">
-        <div id="printSupplyForm" class="table-responsive">
-        <table class="table table-striped"><thead><tr><th>#</th><th>Item</th><th>Category</th><th>Order (kg)</th><th style="width:130px">Supplying (kg)</th><th style="width:200px">Notes</th></tr></thead><tbody>
-        <?php $n=1; foreach($items as $it): ?>
-        <tr>
-            <td><?=$n++?></td><td><?=htmlspecialchars($it['name'])?></td><td><?=htmlspecialchars($it['category'])?></td>
-            <td><strong><?=number_format($it['order_kg'],2)?></strong></td>
-            <td><input type="number" name="supply[<?=$it['id']?>]" class="form-control form-control-sm" min="0" step="0.1" value="<?=number_format($it['order_kg'],2,'.','')?>"></td>
-            <td><input type="text" name="notes[<?=$it['id']?>]" class="form-control form-control-sm" placeholder="e.g. short stock"></td>
-        </tr>
-        <?php endforeach; ?></tbody></table></div>
-        <div class="d-flex gap-2 no-print">
-            <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-check-circle"></i> Mark as Supplied</button>
-            <button type="button" class="btn btn-outline-primary" onclick="printSection('printSupplyForm')"><i class="bi bi-printer"></i> Print</button>
+        <?php foreach ($categories as $cat => $catItems): ?>
+        <div class="card mb-3">
+            <div class="card-header py-2" style="background:var(--primary);color:#fff;">
+                <strong><?= htmlspecialchars($cat) ?></strong>
+                <span class="badge bg-light text-dark ms-2"><?= count($catItems) ?></span>
+            </div>
+            <div class="card-body p-0">
+            <?php foreach($catItems as $it): ?>
+                <div class="supply-row d-flex align-items-center px-3 py-3 border-bottom" data-req-id="<?=$it['id']?>" data-order-kg="<?=number_format($it['order_kg'],2,'.','')?>">
+                    <div style="flex:1;min-width:0;">
+                        <div class="fw-semibold"><?=htmlspecialchars($it['name'])?></div>
+                        <div>
+                            <small class="text-muted">Ordered:</small>
+                            <strong class="text-primary"><?=number_format($it['order_kg'],2)?> kg</strong>
+                            <?php if ($it['roundoff_kg'] != $it['order_kg']): ?>
+                                <small class="text-muted ms-2">(Round off: <?=number_format($it['roundoff_kg'],2)?> kg)</small>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                        <div>
+                            <div class="input-group input-group-sm" style="width:130px">
+                                <input type="number" class="form-control text-center supply-kg" min="0" step="0.1" value="<?=number_format($it['order_kg'],2,'.','')?>">
+                                <span class="input-group-text">kg</span>
+                            </div>
+                            <div class="shortage-badge text-center mt-1" style="font-size:0.75rem;"></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Notes row, hidden by default, shown when short -->
+                <div class="supply-notes-row px-3 py-2 border-bottom" data-for="<?=$it['id']?>" style="display:none;background:#fff8f0;">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-chat-left-text text-warning"></i>
+                        <input type="text" class="form-control form-control-sm supply-notes" placeholder="Reason for shortage (e.g. Out of stock, only 2kg available)">
+                    </div>
+                </div>
+            <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endforeach; ?>
+
+        <!-- Summary and submit -->
+        <div class="bg-white border-top p-3 no-print" style="position:sticky;bottom:0;z-index:100;box-shadow:0 -4px 12px rgba(0,0,0,0.08);border-radius:12px 12px 0 0;">
+            <div id="supplySummary" class="mb-2" style="font-size:0.9rem;"></div>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <button type="submit" class="btn btn-primary px-4"><i class="bi bi-truck"></i> Confirm Supply</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="printSection('supplyForm')"><i class="bi bi-printer"></i> Print</button>
+            </div>
         </div>
     </form>
+
     <script>
-    $('#supplyForm').on('submit', function(e){
-        e.preventDefault();
-        if (!confirm('Confirm supply quantities?')) return;
-        let items = [];
-        $('input[name^="supply"]').each(function(){
-            const reqId = $(this).attr('name').match(/\d+/)[0];
-            items.push({
-                requisition_id: reqId,
-                kg_supplied: parseFloat($(this).val()) || 0,
-                notes: $('input[name="notes['+reqId+']"]').val() || ''
+    $(document).ready(function(){
+        function updateRow(row) {
+            const orderKg = parseFloat(row.data('order-kg')) || 0;
+            const supplyKg = parseFloat(row.find('.supply-kg').val()) || 0;
+            const diff = supplyKg - orderKg;
+            const reqId = row.data('req-id');
+            const badge = row.find('.shortage-badge');
+            const notesRow = $('[data-for="'+reqId+'"]');
+
+            if (diff < 0) {
+                badge.html('<span class="text-danger fw-bold"><i class="bi bi-exclamation-triangle"></i> Short ' + Math.abs(diff).toFixed(1) + ' kg</span>');
+                row.css('background', '#fff5f5');
+                notesRow.slideDown(200);
+            } else if (diff > 0) {
+                badge.html('<span class="text-success">+' + diff.toFixed(1) + ' kg extra</span>');
+                row.css('background', '#f0fff4');
+                notesRow.slideUp(200);
+            } else {
+                badge.html('');
+                row.css('background', '');
+                notesRow.slideUp(200);
+            }
+            updateSupplySummary();
+        }
+
+        function updateSupplySummary() {
+            let totalOrder = 0, totalSupply = 0, shortItems = 0;
+            $('.supply-row').each(function(){
+                const o = parseFloat($(this).data('order-kg')) || 0;
+                const s = parseFloat($(this).find('.supply-kg').val()) || 0;
+                totalOrder += o;
+                totalSupply += s;
+                if (s < o) shortItems++;
             });
+            let html = '<i class="bi bi-box-seam"></i> Supplying <strong class="text-primary">' + totalSupply.toFixed(1) + ' kg</strong> of ' + totalOrder.toFixed(1) + ' kg ordered';
+            if (shortItems > 0) {
+                html += ' &mdash; <span class="text-danger"><i class="bi bi-exclamation-triangle"></i> <strong>' + shortItems + ' item(s) short</strong> — chef will be notified</span>';
+            }
+            $('#supplySummary').html(html);
+        }
+
+        // Live update on input change
+        $('.supply-kg').on('input', function(){
+            updateRow($(this).closest('.supply-row'));
         });
-        $.post('api.php', {action:'mark_supplied', session_id:<?=$session['id']?>, items:JSON.stringify(items)}, function(res){
-            if (res.success) { alert('Supply recorded!'); location.href='?page=store_dashboard'; }
-            else alert(res.message || 'Error');
-        }, 'json');
+
+        // Initial summary
+        updateSupplySummary();
+
+        // Submit
+        $('#supplyForm').on('submit', function(e){
+            e.preventDefault();
+            let items = [], shortItems = [];
+            $('.supply-row').each(function(){
+                const reqId = $(this).data('req-id');
+                const orderKg = parseFloat($(this).data('order-kg')) || 0;
+                const supplyKg = parseFloat($(this).find('.supply-kg').val()) || 0;
+                const notes = $('[data-for="'+reqId+'"]').find('.supply-notes').val() || '';
+                items.push({ requisition_id: reqId, kg_supplied: supplyKg, notes: notes });
+                if (supplyKg < orderKg) {
+                    const name = $(this).find('.fw-semibold').first().text();
+                    shortItems.push(name + ': ' + supplyKg.toFixed(1) + '/' + orderKg.toFixed(1) + ' kg');
+                }
+            });
+
+            let msg = 'Confirm supply of ' + items.length + ' items?';
+            if (shortItems.length) {
+                msg += '\n\n⚠️ SHORTAGES (' + shortItems.length + ' items):\n• ' + shortItems.join('\n• ');
+                msg += '\n\nChef will be notified about these shortages.';
+            }
+            if (!confirm(msg)) return;
+
+            $.post('api.php', {action:'mark_supplied', session_id:<?=$session['id']?>, items:JSON.stringify(items)}, function(res){
+                if (res.success) { alert('Supply recorded! Chef has been notified.'); location.href='?page=store_dashboard'; }
+                else alert(res.message || 'Error');
+            }, 'json');
+        });
     });
     </script>
 <?php }
