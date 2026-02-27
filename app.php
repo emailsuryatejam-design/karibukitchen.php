@@ -1022,7 +1022,7 @@ function include_store_dashboard($db, $today, $kitchenId) {
                 }
                 $short = $supply && $supply['kg_supplied'] < $it['order_kg'];
             ?>
-            <div class="d-flex align-items-center px-3 py-2 border-bottom <?=$short?'':'']?>" <?=$short?'style="background:#fff5f5"':''?>>
+            <div class="d-flex align-items-center px-3 py-2 border-bottom" <?=$short?'style="background:#fff5f5"':''?>>
                 <div style="flex:1;">
                     <span class="fw-semibold"><?=htmlspecialchars($it['name'])?></span>
                     <?php if ($it['notes']): ?><br><small class="text-muted"><i class="bi bi-sticky"></i> <?=htmlspecialchars($it['notes'])?></small><?php endif; ?>
