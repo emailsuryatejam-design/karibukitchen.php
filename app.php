@@ -5,7 +5,23 @@ requireLogin();
 $db = getDB();
 $role = getUserRole();
 $userId = getUserId();
-$today = date('Y-m-d');
+// Allow date selection — validate format, no more than 7 days ahead
+$selectedDate = $_GET['date'] ?? date('Y-m-d');
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $selectedDate) || !strtotime($selectedDate)) {
+    $selectedDate = date('Y-m-d');
+}
+$maxFuture = date('Y-m-d', strtotime('+7 days'));
+if ($selectedDate > $maxFuture) $selectedDate = $maxFuture;
+$today = $selectedDate;
+$isToday = ($today === date('Y-m-d'));
+
+// Helper: build URL preserving date param
+function buildUrl($page, $extra = []) {
+    global $today, $isToday;
+    $params = ['page' => $page];
+    if (!$isToday) $params['date'] = $today;
+    return '?' . http_build_query(array_merge($params, $extra));
+}
 
 // Get user's kitchen
 $userStmt = $db->prepare("SELECT kitchen_id FROM pilot_users WHERE id = ?");
@@ -101,6 +117,12 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
         .uom-badge { background: #e8ecf1; color: var(--primary); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
         .border-dashed { border: 2px dashed #dee2e6 !important; }
         .item-row.selected { background: #f0f7ff; }
+        .date-nav { background:#fff; border-bottom:1px solid #e0e0e0; padding:6px 12px; }
+        .date-nav .btn-date { background:none; border:1px solid #dee2e6; color:var(--primary); border-radius:6px; padding:4px 10px; font-weight:600; font-size:0.85rem; cursor:pointer; }
+        .date-nav .btn-date:hover { background:var(--primary); color:#fff; }
+        .date-nav .btn-date.active { background:var(--primary); color:#fff; }
+        .date-nav input[type="date"] { border:1px solid #dee2e6; border-radius:6px; padding:4px 8px; font-size:0.85rem; font-weight:600; color:var(--primary); max-width:150px; }
+        .date-future-badge { background:var(--accent); color:#fff; font-size:0.65rem; padding:2px 6px; border-radius:8px; }
         .hamburger { display:none; background:none; border:none; color:#fff; font-size:1.5rem; cursor:pointer; padding:4px 8px; }
         .drawer-handle { display:none; }
 
@@ -229,6 +251,12 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
             /* Search bar */
             .input-group { max-width: 100% !important; }
 
+            /* Date nav compact */
+            .date-nav { padding: 4px 8px !important; gap: 4px !important; }
+            .date-nav .btn-date { padding: 3px 8px; font-size: 0.78rem; }
+            .date-nav input[type="date"] { font-size: 0.78rem; padding: 3px 6px; max-width: 130px; }
+            .date-future-badge { font-size: 0.6rem !important; padding: 1px 5px; }
+
             /* Footer */
             footer { padding: 10px !important; font-size: 0.7rem !important; }
 
@@ -261,7 +289,7 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
         <div class="d-flex align-items-center gap-2">
             <?php if ($role === 'admin' && count($allKitchens) > 0): ?>
                 <div class="kitchen-switcher">
-                    <select onchange="if(this.value) location.href='?page=<?= $page ?>&kitchen_id='+this.value">
+                    <select onchange="if(this.value) location.href='?page=<?= $page ?><?= $isToday ? '' : '&date='.$today ?>&kitchen_id='+this.value">
                         <option value="">Kitchen</option>
                         <?php foreach ($allKitchens as $k): ?>
                             <option value="<?= $k['id'] ?>" <?= $activeKitchenId == $k['id'] ? 'selected' : '' ?>><?= htmlspecialchars($k['name']) ?></option>
@@ -276,7 +304,7 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
             <span class="text-light d-sm-none" style="font-size:0.8rem;">
                 <i class="bi bi-person-circle"></i> <span class="badge bg-light text-dark"><?= ucfirst($role) ?></span>
             </span>
-            <span class="text-light opacity-75 d-none d-md-inline" style="font-size:0.8rem;"><i class="bi bi-calendar3"></i> <?= date('D, M j') ?></span>
+            <span class="text-light opacity-75 d-none d-md-inline" style="font-size:0.8rem;"><i class="bi bi-calendar3"></i> <?= date('D, M j', strtotime($today)) ?><?= $isToday ? '' : ' <span class="badge bg-warning text-dark" style="font-size:0.6rem;">FUTURE</span>' ?></span>
             <a href="logout.php" class="btn btn-outline-light btn-sm" title="Logout"><i class="bi bi-box-arrow-right"></i><span class="d-none d-sm-inline"> Logout</span></a>
         </div>
     </nav>
@@ -284,6 +312,25 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
     <div class="d-md-none text-center py-1 no-print" style="background:var(--primary);color:#fff;font-size:0.8rem;">
         <i class="bi bi-building"></i> <?= htmlspecialchars($activeKitchen['name']) ?>
         <?php if ($todaySession): ?> · <?= $todaySession['guest_count'] ?> bed nights<?php endif; ?>
+    </div>
+    <?php endif; ?>
+
+    <!-- Date Navigation Bar -->
+    <?php if ($activeKitchenId && in_array($page, ['chef_dashboard','requisition','review_supply','day_close','store_dashboard','supply'])): ?>
+    <?php
+        $prevDate = date('Y-m-d', strtotime($today . ' -1 day'));
+        $nextDate = date('Y-m-d', strtotime($today . ' +1 day'));
+        $canGoNext = $nextDate <= $maxFuture;
+        $todayLabel = $isToday ? 'Today' : date('D, M j', strtotime($today));
+    ?>
+    <div class="date-nav d-flex align-items-center justify-content-center gap-2 no-print">
+        <button class="btn-date" onclick="changeDate('<?=$prevDate?>')" title="Previous day"><i class="bi bi-chevron-left"></i></button>
+        <button class="btn-date <?=$isToday?'active':''?>" onclick="changeDate('<?=date('Y-m-d')?>')" title="Go to today"><i class="bi bi-calendar-event"></i> Today</button>
+        <input type="date" id="datePicker" value="<?=$today?>" max="<?=$maxFuture?>" onchange="changeDate(this.value)" title="Pick a date">
+        <button class="btn-date" onclick="changeDate('<?=$nextDate?>')" <?=$canGoNext?'':'disabled style="opacity:0.4;cursor:not-allowed;"'?> title="Next day"><i class="bi bi-chevron-right"></i></button>
+        <?php if (!$isToday): ?>
+            <span class="date-future-badge"><i class="bi bi-clock"></i> <?= date('l, M j', strtotime($today)) ?></span>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
 
@@ -295,14 +342,14 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
                 <div class="drawer-handle"></div>
                 <nav class="nav flex-column">
                     <?php if ($role === 'chef' || $role === 'admin'): ?>
-                        <a class="nav-link <?= $page === 'chef_dashboard' ? 'active' : '' ?>" href="?page=chef_dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
-                        <a class="nav-link <?= $page === 'requisition' ? 'active' : '' ?>" href="?page=requisition"><i class="bi bi-cart-plus"></i> Requisition</a>
-                        <a class="nav-link <?= $page === 'review_supply' ? 'active' : '' ?>" href="?page=review_supply"><i class="bi bi-clipboard-check"></i> Review Supply</a>
-                        <a class="nav-link <?= $page === 'day_close' ? 'active' : '' ?>" href="?page=day_close"><i class="bi bi-moon-stars"></i> Day Close</a>
+                        <a class="nav-link <?= $page === 'chef_dashboard' ? 'active' : '' ?>" href="<?=buildUrl('chef_dashboard')?>"><i class="bi bi-speedometer2"></i> Dashboard</a>
+                        <a class="nav-link <?= $page === 'requisition' ? 'active' : '' ?>" href="<?=buildUrl('requisition')?>"><i class="bi bi-cart-plus"></i> Requisition</a>
+                        <a class="nav-link <?= $page === 'review_supply' ? 'active' : '' ?>" href="<?=buildUrl('review_supply')?>"><i class="bi bi-clipboard-check"></i> Review Supply</a>
+                        <a class="nav-link <?= $page === 'day_close' ? 'active' : '' ?>" href="<?=buildUrl('day_close')?>"><i class="bi bi-moon-stars"></i> Day Close</a>
                     <?php endif; ?>
                     <?php if ($role === 'store' || $role === 'admin'): ?>
-                        <a class="nav-link <?= $page === 'store_dashboard' ? 'active' : '' ?>" href="?page=store_dashboard"><i class="bi bi-shop"></i> Store Dashboard</a>
-                        <a class="nav-link <?= $page === 'supply' ? 'active' : '' ?>" href="?page=supply"><i class="bi bi-truck"></i> Supply Items</a>
+                        <a class="nav-link <?= $page === 'store_dashboard' ? 'active' : '' ?>" href="<?=buildUrl('store_dashboard')?>"><i class="bi bi-shop"></i> Store Dashboard</a>
+                        <a class="nav-link <?= $page === 'supply' ? 'active' : '' ?>" href="<?=buildUrl('supply')?>"><i class="bi bi-truck"></i> Supply Items</a>
                     <?php endif; ?>
                     <hr class="mx-3">
                     <a class="nav-link <?= $page === 'reports' ? 'active' : '' ?>" href="?page=reports"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
@@ -350,12 +397,12 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header" style="background:var(--primary);color:#fff;">
-                    <h5 class="modal-title"><i class="bi bi-people-fill"></i> Good Morning, Chef!</h5>
+                    <h5 class="modal-title"><i class="bi bi-people-fill"></i> <?= $isToday ? 'Good Morning, Chef!' : 'Plan Ahead — ' . date('M j', strtotime($today)) ?></h5>
                 </div>
                 <div class="modal-body text-center py-4">
                     <p class="text-muted mb-2"><?= htmlspecialchars($activeKitchen['name'] ?? '') ?></p>
-                    <p class="mb-3 fs-5">How many bed nights / guests today?</p>
-                    <p class="text-muted mb-3"><?= date('l, F j, Y') ?></p>
+                    <p class="mb-3 fs-5">How many bed nights / guests<?= $isToday ? ' today' : '' ?>?</p>
+                    <p class="mb-3 <?= $isToday ? 'text-muted' : 'text-primary fw-bold' ?>"><?= date('l, F j, Y', strtotime($today)) ?><?= $isToday ? '' : ' <span class="badge bg-warning text-dark">Planning Ahead</span>' ?></p>
                     <input type="number" id="guestCount" class="form-control form-control-lg text-center mx-auto" style="max-width:200px" min="1" max="9999" placeholder="0" autofocus>
                 </div>
                 <div class="modal-footer justify-content-center">
@@ -386,12 +433,24 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
     function submitGuestCount() {
         const count = parseInt($('#guestCount').val());
         if (!count || count < 1) { alert('Please enter a valid number.'); return; }
-        $.post('api.php', { action: 'create_session', guest_count: count, kitchen_id: <?= $activeKitchenId ?> }, function(res) {
+        $.post('api.php', { action: 'create_session', guest_count: count, kitchen_id: <?= $activeKitchenId ?>, session_date: '<?= $today ?>' }, function(res) {
             if (res.success) location.reload(); else alert(res.message || 'Error');
         }, 'json');
     }
     $('#guestCount').on('keypress', function(e) { if (e.which === 13) submitGuestCount(); });
     <?php endif; ?>
+
+    // Date navigation
+    function changeDate(d) {
+        const params = new URLSearchParams(window.location.search);
+        const todayStr = '<?= date('Y-m-d') ?>';
+        if (d === todayStr) {
+            params.delete('date');
+        } else {
+            params.set('date', d);
+        }
+        window.location.href = '?' + params.toString();
+    }
 
     // Bottom drawer toggle
     function toggleDrawer() {
@@ -460,8 +519,10 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
 // CHEF DASHBOARD
 // ============================================================
 function include_chef_dashboard($db, $session, $today, $kitchenId) {
+    $isToday = ($today === date('Y-m-d'));
+    $dateLabel = $isToday ? "today's" : date('M j', strtotime($today)) . "'s";
     if (!$session) {
-        echo '<div class="alert alert-info"><i class="bi bi-info-circle"></i> Set the guest count to begin today\'s session.</div>';
+        echo '<div class="alert alert-info"><i class="bi bi-info-circle"></i> Set the guest count to begin ' . $dateLabel . ' session.</div>';
         return;
     }
     $reqCount = $db->prepare("SELECT COUNT(*) FROM pilot_requisitions WHERE session_id = ?"); $reqCount->execute([$session['id']]);
@@ -479,8 +540,8 @@ function include_chef_dashboard($db, $session, $today, $kitchenId) {
         <div class="col-6 col-md-3"><div class="card stat-card"><span class="badge <?= $statusInfo[1] ?> status-badge fs-6"><?= $statusInfo[0] ?></span><div class="stat-label mt-2">Session Status</div></div></div>
     </div>
     <div class="card"><div class="card-header">Quick Actions</div><div class="card-body"><div class="d-flex gap-2 flex-wrap">
-        <?php if ($session['status'] === 'open'): ?><a href="?page=requisition" class="btn btn-primary"><i class="bi bi-cart-plus"></i> Create Requisition</a><?php endif; ?>
-        <?php if ($session['status'] === 'supplied'): ?><a href="?page=review_supply" class="btn btn-primary"><i class="bi bi-clipboard-check"></i> Review Supply</a><a href="?page=day_close" class="btn btn-accent"><i class="bi bi-moon-stars"></i> Day Close</a><?php endif; ?>
+        <?php if ($session['status'] === 'open'): ?><a href="<?=buildUrl('requisition')?>" class="btn btn-primary"><i class="bi bi-cart-plus"></i> Create Requisition</a><?php endif; ?>
+        <?php if ($session['status'] === 'supplied'): ?><a href="<?=buildUrl('review_supply')?>" class="btn btn-primary"><i class="bi bi-clipboard-check"></i> Review Supply</a><a href="<?=buildUrl('day_close')?>" class="btn btn-accent"><i class="bi bi-moon-stars"></i> Day Close</a><?php endif; ?>
         <?php if ($session['status'] === 'requisition_sent'): ?>
             <span class="btn btn-outline-secondary disabled"><i class="bi bi-hourglass-split"></i> Waiting for Store...</span>
             <button class="btn btn-outline-danger" onclick="resetRequisition(<?=$session['id']?>)"><i class="bi bi-arrow-counterclockwise"></i> Edit / Reset Requisition</button>
@@ -491,7 +552,7 @@ function include_chef_dashboard($db, $session, $today, $kitchenId) {
     function resetRequisition(sessionId) {
         if (!confirm('This will delete your current requisition so you can re-create it.\n\nAre you sure?')) return;
         $.post('api.php', {action:'reset_requisition', session_id:sessionId}, function(res){
-            if (res.success) { location.href='?page=requisition'; }
+            if (res.success) { location.href='<?=buildUrl('requisition')?>'; }
             else alert(res.message || 'Error');
         }, 'json');
     }
@@ -502,14 +563,15 @@ function include_chef_dashboard($db, $session, $today, $kitchenId) {
 // REQUISITION (KG-based)
 // ============================================================
 function include_requisition($db, $session, $today, $kitchenId) {
-    if (!$session) { echo '<div class="alert alert-warning">Please set the guest count first.</div>'; return; }
+    $isToday = ($today === date('Y-m-d'));
+    if (!$session) { echo '<div class="alert alert-warning">Please set the guest count first' . ($isToday ? '' : ' for ' . date('M j', strtotime($today))) . '.</div>'; return; }
 
     // Already submitted - show read-only (simplified for chef)
     if ($session['status'] !== 'open') {
         $stmt = $db->prepare("SELECT r.*, i.name, i.category, i.portion_weight_kg FROM pilot_requisitions r JOIN pilot_items i ON r.item_id = i.id WHERE r.session_id = ? ORDER BY i.category, i.name");
         $stmt->execute([$session['id']]); $items = $stmt->fetchAll();
         echo '<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">';
-        echo '<h4 class="mb-0">Today\'s Requisition</h4>';
+        echo '<h4 class="mb-0">' . ($isToday ? "Today's" : date('M j', strtotime($today)) . "'s") . ' Requisition</h4>';
         echo '<span class="badge bg-success fs-6"><i class="bi bi-check-circle"></i> Submitted</span>';
         echo '</div>';
         echo '<div class="row g-3 mb-3">';
@@ -519,7 +581,7 @@ function include_requisition($db, $session, $today, $kitchenId) {
         echo '<div class="col-auto"><div class="bg-white rounded-3 px-3 py-2 border"><small class="text-muted d-block">Total Order</small><strong class="fs-5 text-primary">'.number_format($totalOrder,2).' kg</strong></div></div>';
         echo '</div>';
 
-        echo '<div id="printRequisition"><h5 class="mb-2 d-none d-print-block">Requisition - '.date('D, M j, Y').' | Bed Nights: '.$session['guest_count'].'</h5>';
+        echo '<div id="printRequisition"><h5 class="mb-2 d-none d-print-block">Requisition - '.date('D, M j, Y', strtotime($today)).' | Bed Nights: '.$session['guest_count'].'</h5>';
         echo '<div class="table-responsive"><table class="table table-striped table-sm" id="reqTable"><thead><tr><th>#</th><th>Item</th><th>Category</th><th class="text-center">Wt/Portion</th><th class="text-center">Portions</th><th class="text-end">Order (kg)</th><th>Notes</th></tr></thead><tbody>';
         $n=1;
         foreach($items as $it) {
@@ -537,7 +599,7 @@ function include_requisition($db, $session, $today, $kitchenId) {
         echo '<button class="btn btn-outline-success btn-sm" onclick="downloadCSV(\'reqTable\',\'requisition_'.$today.'\')"><i class="bi bi-download"></i> CSV</button>';
         if ($session['status'] === 'requisition_sent') {
             echo '<button class="btn btn-outline-danger btn-sm ms-auto" onclick="resetRequisition('.$session['id'].')"><i class="bi bi-arrow-counterclockwise"></i> Edit / Reset</button>';
-            echo '<script>function resetRequisition(sid){if(!confirm("This will delete your current requisition so you can re-create it.\\n\\nAre you sure?"))return;$.post("api.php",{action:"reset_requisition",session_id:sid},function(r){if(r.success)location.href="?page=requisition";else alert(r.message||"Error");},"json");}</script>';
+            echo '<script>function resetRequisition(sid){if(!confirm("This will delete your current requisition so you can re-create it.\\n\\nAre you sure?"))return;$.post("api.php",{action:"reset_requisition",session_id:sid},function(r){if(r.success)location.href="'.buildUrl('requisition').'";else alert(r.message||"Error");},"json");}</script>';
         }
         echo '</div>';
         return;
@@ -551,7 +613,7 @@ function include_requisition($db, $session, $today, $kitchenId) {
     <div class="d-flex align-items-center gap-3 mb-2 flex-wrap">
         <h4 class="mb-0">Create Requisition</h4>
         <span class="badge bg-secondary fs-6"><?= $session['guest_count'] ?> Bed Nights</span>
-        <span class="text-muted ms-auto" style="font-size:0.85rem"><i class="bi bi-calendar"></i> <?= date('D, M j, Y') ?></span>
+        <span class="text-muted ms-auto" style="font-size:0.85rem"><i class="bi bi-calendar"></i> <?= date('D, M j, Y', strtotime($today)) ?><?= $isToday ? '' : ' <span class="badge bg-warning text-dark" style="font-size:0.65rem">PLANNING</span>' ?></span>
     </div>
     <p class="text-muted mb-3" style="font-size:0.85rem"><i class="bi bi-info-circle"></i> Select items and enter portions. Order quantity in kg is auto-calculated.</p>
 
@@ -764,7 +826,7 @@ function include_requisition($db, $session, $today, $kitchenId) {
             if (!items.length) { alert('Select at least one item or add a custom item.'); return; }
             if (!confirm('Submit requisition with ' + items.length + ' item(s) to the store?')) return;
             $.post('api.php', {action:'submit_requisition', session_id:<?=$session['id']?>, items:JSON.stringify(items)}, function(res){
-                if (res.success) { alert('Requisition submitted!'); location.href='?page=chef_dashboard'; }
+                if (res.success) { alert('Requisition submitted!'); location.href='<?=buildUrl('chef_dashboard')?>'; }
                 else alert(res.message || 'Error');
             }, 'json');
         });
@@ -776,7 +838,9 @@ function include_requisition($db, $session, $today, $kitchenId) {
 // REVIEW SUPPLY (KG-based)
 // ============================================================
 function include_review_supply($db, $session) {
-    if (!$session) { echo '<div class="alert alert-warning">No session for today.</div>'; return; }
+    global $today;
+    $isToday = ($today === date('Y-m-d'));
+    if (!$session) { echo '<div class="alert alert-warning">No session for ' . ($isToday ? 'today' : date('M j', strtotime($today))) . '.</div>'; return; }
     if ($session['status'] === 'open' || $session['status'] === 'requisition_sent') {
         echo '<div class="alert alert-info"><i class="bi bi-hourglass-split"></i> Waiting for store to supply items.</div>';
         return;
@@ -830,7 +894,7 @@ function include_review_supply($db, $session) {
 
     <!-- Items table -->
     <div id="printSupplyReview">
-        <h5 class="mb-2 d-none d-print-block">Supply Review - <?= date('D, M j, Y') ?></h5>
+        <h5 class="mb-2 d-none d-print-block">Supply Review - <?= date('D, M j, Y', strtotime($today)) ?></h5>
         <div class="table-responsive">
         <table class="table table-sm" id="supplyReviewTable">
             <thead><tr><th>#</th><th>Item</th><th class="text-end">Ordered</th><th class="text-end">Round Off</th><th class="text-end">Supplied</th><th class="text-end">Diff</th><th>Store Notes</th></tr></thead>
@@ -931,7 +995,9 @@ function include_review_supply($db, $session) {
 // DAY CLOSE (KG-based)
 // ============================================================
 function include_day_close($db, $session, $kitchenId) {
-    if (!$session) { echo '<div class="alert alert-warning">No session for today.</div>'; return; }
+    global $today;
+    $isToday = ($today === date('Y-m-d'));
+    if (!$session) { echo '<div class="alert alert-warning">No session for ' . ($isToday ? 'today' : date('M j', strtotime($today))) . '.</div>'; return; }
 
     // Already closed - show report
     if ($session['status'] === 'day_closed') {
@@ -990,7 +1056,7 @@ function include_day_close($db, $session, $kitchenId) {
             });
         });
         $.post('api.php', {action:'day_close', session_id:<?=$session['id']?>, kitchen_id:<?=$kitchenId?>, items:JSON.stringify(items)}, function(res){
-            if (res.success) { alert('Day closed! Remaining stock saved.'); location.href='?page=day_close'; }
+            if (res.success) { alert('Day closed! Remaining stock saved.'); location.href='<?=buildUrl('day_close')?>'; }
             else alert(res.message || 'Error');
         }, 'json');
     });
@@ -1004,13 +1070,14 @@ function include_store_dashboard($db, $today, $kitchenId) {
     $stmt = $db->prepare("SELECT ds.*, u.name as chef_name, k.name as kitchen_name FROM pilot_daily_sessions ds JOIN pilot_users u ON ds.chef_id=u.id LEFT JOIN pilot_kitchens k ON ds.kitchen_id=k.id WHERE ds.session_date=? AND ds.kitchen_id=?");
     $stmt->execute([$today, $kitchenId]); $session = $stmt->fetch();
 
+    $isToday = ($today === date('Y-m-d'));
     // No session yet
     if (!$session) {
 ?>
     <div class="text-center py-5">
         <i class="bi bi-inbox" style="font-size:4rem;color:#ccc;"></i>
         <h4 class="mt-3 text-muted">No Requisition Yet</h4>
-        <p class="text-muted">Waiting for kitchen to create today's requisition.<br>Check back soon or view past records.</p>
+        <p class="text-muted">Waiting for kitchen to create <?= $isToday ? "today's" : date('M j', strtotime($today)) . "'s" ?> requisition.<br>Check back soon or view past records.</p>
         <a href="?page=reports" class="btn btn-outline-primary mt-2"><i class="bi bi-file-earmark-bar-graph"></i> View Reports</a>
     </div>
 <?php return; }
@@ -1048,7 +1115,7 @@ function include_store_dashboard($db, $today, $kitchenId) {
     <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
         <h4 class="mb-0"><i class="bi bi-shop"></i> Store Dashboard</h4>
         <span class="badge bg-<?=$si[1]?> fs-6"><i class="bi <?=$si[2]?>"></i> <?=$si[0]?></span>
-        <span class="text-muted ms-auto" style="font-size:0.85rem"><i class="bi bi-calendar3"></i> <?=date('l, M j, Y')?></span>
+        <span class="text-muted ms-auto" style="font-size:0.85rem"><i class="bi bi-calendar3"></i> <?=date('l, M j, Y', strtotime($today))?><?= $isToday ? '' : ' <span class="badge bg-warning text-dark" style="font-size:0.6rem">PLANNED</span>' ?></span>
     </div>
 
     <!-- Info bar -->
@@ -1125,7 +1192,7 @@ function include_store_dashboard($db, $today, $kitchenId) {
             <i class="bi bi-bell-fill text-warning" style="font-size:2.5rem;"></i>
             <h5 class="mt-2 mb-1">New Requisition Received!</h5>
             <p class="text-muted mb-3"><?=$totalItems?> items, <?=number_format($totalOrderKg,1)?> kg total — from Chef <?=htmlspecialchars($session['chef_name'])?></p>
-            <a href="?page=supply" class="btn btn-primary btn-lg px-5"><i class="bi bi-truck"></i> Supply Items Now</a>
+            <a href="<?=buildUrl('supply')?>" class="btn btn-primary btn-lg px-5"><i class="bi bi-truck"></i> Supply Items Now</a>
         </div>
     </div>
     <?php elseif ($session['status'] === 'supplied'): ?>
@@ -1188,9 +1255,9 @@ function include_store_dashboard($db, $today, $kitchenId) {
     <!-- Quick links -->
     <div class="d-flex gap-2 flex-wrap no-print">
         <?php if ($session['status'] === 'requisition_sent'): ?>
-            <a href="?page=supply" class="btn btn-primary"><i class="bi bi-truck"></i> Supply Items</a>
+            <a href="<?=buildUrl('supply')?>" class="btn btn-primary"><i class="bi bi-truck"></i> Supply Items</a>
         <?php endif; ?>
-        <a href="?page=supply" class="btn btn-outline-primary"><i class="bi bi-journal-text"></i> Supply Log</a>
+        <a href="<?=buildUrl('supply')?>" class="btn btn-outline-primary"><i class="bi bi-journal-text"></i> Supply Log</a>
         <a href="?page=reports" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
     </div>
 <?php }
@@ -1199,6 +1266,7 @@ function include_store_dashboard($db, $today, $kitchenId) {
 // SUPPLY (KG-based)
 // ============================================================
 function include_supply($db, $today, $kitchenId) {
+    $isToday = ($today === date('Y-m-d'));
     $stmt = $db->prepare("SELECT * FROM pilot_daily_sessions WHERE session_date=? AND kitchen_id=?"); $stmt->execute([$today, $kitchenId]); $session = $stmt->fetch();
     if (!$session || $session['status']==='open') { echo '<div class="alert alert-info">No requisition from kitchen yet.</div>'; return; }
 
@@ -1248,7 +1316,7 @@ function include_supply($db, $today, $kitchenId) {
     <div class="d-flex align-items-center gap-3 mb-2 flex-wrap">
         <h4 class="mb-0">Supply Items</h4>
         <span class="badge bg-warning text-dark fs-6"><i class="bi bi-clock"></i> Pending</span>
-        <span class="text-muted ms-auto" style="font-size:0.85rem"><i class="bi bi-calendar"></i> <?= date('D, M j, Y') ?></span>
+        <span class="text-muted ms-auto" style="font-size:0.85rem"><i class="bi bi-calendar"></i> <?= date('D, M j, Y', strtotime($today)) ?></span>
     </div>
     <p class="text-muted mb-3" style="font-size:0.85rem"><i class="bi bi-info-circle"></i> Change supply qty if stock is short. Add a reason for any shortages — the chef will be notified.</p>
 
@@ -1378,7 +1446,7 @@ function include_supply($db, $today, $kitchenId) {
             if (!confirm(msg)) return;
 
             $.post('api.php', {action:'mark_supplied', session_id:<?=$session['id']?>, items:JSON.stringify(items)}, function(res){
-                if (res.success) { alert('Supply recorded! Chef has been notified.'); location.href='?page=store_dashboard'; }
+                if (res.success) { alert('Supply recorded! Chef has been notified.'); location.href='<?=buildUrl('store_dashboard')?>'; }
                 else alert(res.message || 'Error');
             }, 'json');
         });

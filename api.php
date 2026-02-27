@@ -30,12 +30,19 @@ switch ($action) {
         $guestCount = intval($_POST['guest_count'] ?? 0);
         $kitchenId = intval($_POST['kitchen_id'] ?? 0);
         if ($guestCount < 1 || $kitchenId < 1) { echo json_encode(['success'=>false,'message'=>'Invalid data']); exit; }
-        $today = date('Y-m-d');
+        // Accept date param for planning ahead, default to today
+        $sessionDate = $_POST['session_date'] ?? date('Y-m-d');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $sessionDate) || !strtotime($sessionDate)) {
+            $sessionDate = date('Y-m-d');
+        }
+        // Don't allow more than 7 days in future
+        $maxFuture = date('Y-m-d', strtotime('+7 days'));
+        if ($sessionDate > $maxFuture) { echo json_encode(['success'=>false,'message'=>'Cannot plan more than 7 days ahead']); exit; }
         $check = $db->prepare("SELECT id FROM pilot_daily_sessions WHERE session_date=? AND kitchen_id=?");
-        $check->execute([$today, $kitchenId]);
-        if ($check->fetch()) { echo json_encode(['success'=>false,'message'=>'Session already exists']); exit; }
+        $check->execute([$sessionDate, $kitchenId]);
+        if ($check->fetch()) { echo json_encode(['success'=>false,'message'=>'Session already exists for this date']); exit; }
         $stmt = $db->prepare("INSERT INTO pilot_daily_sessions (session_date, guest_count, chef_id, kitchen_id, status) VALUES (?,?,?,?,'open')");
-        $stmt->execute([$today, $guestCount, getUserId(), $kitchenId]);
+        $stmt->execute([$sessionDate, $guestCount, getUserId(), $kitchenId]);
         echo json_encode(['success'=>true,'session_id'=>$db->lastInsertId()]);
         break;
 
