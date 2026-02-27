@@ -267,6 +267,15 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
     </div>
     <?php endif; ?>
 
+    <!-- PWA Install Banner -->
+    <div id="installBanner" class="no-print" style="display:none; position:fixed; bottom:0; left:0; right:0; background:linear-gradient(135deg,var(--primary),var(--dark)); color:#fff; padding:14px 20px; text-align:center; z-index:9999; box-shadow:0 -4px 20px rgba(0,0,0,0.3);">
+        <div class="d-flex align-items-center justify-content-center gap-3 flex-wrap">
+            <span><i class="bi bi-phone"></i> Install <strong>Karibu Kitchen</strong> on your device for quick access</span>
+            <button id="installBtn" class="btn btn-sm" style="background:#e94560; color:#fff; font-weight:600; border-radius:20px; padding:6px 20px;">Install App</button>
+            <button onclick="document.getElementById('installBanner').style.display='none'" style="background:none; border:none; color:rgba(255,255,255,0.6); cursor:pointer; font-size:1.2rem; padding:0 4px;">&times;</button>
+        </div>
+    </div>
+
     <!-- Footer -->
     <footer class="text-center py-3 no-print" style="background:#1a1a2e; color:rgba(255,255,255,0.5); font-size:0.8rem;">
         Powered by <strong style="color:rgba(255,255,255,0.7);">VyomaAI Studios</strong>
@@ -326,6 +335,23 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').then(reg => console.log('SW registered')).catch(err => console.log('SW error:', err));
     }
+
+    // PWA Install Prompt
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPrompt = e;
+        document.getElementById('installBanner').style.display = 'block';
+    });
+    document.getElementById('installBtn')?.addEventListener('click', () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            deferredPrompt.userChoice.then(result => {
+                document.getElementById('installBanner').style.display = 'none';
+                deferredPrompt = null;
+            });
+        }
+    });
     </script>
 </body>
 </html>
