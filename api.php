@@ -26,14 +26,27 @@ switch ($action) {
         $items = json_decode($_POST['items'] ?? '[]', true);
         if (!$sessionId || empty($items)) { echo json_encode(['success'=>false,'message'=>'Missing data']); exit; }
         $check = $db->prepare("SELECT * FROM pilot_daily_sessions WHERE id=? AND status='open'"); $check->execute([$sessionId]);
-        if (!$check->fetch()) { echo json_encode(['success'=>false,'message'=>'Session not open']); exit; }
+        $sess = $check->fetch();
+        if (!$sess) { echo json_encode(['success'=>false,'message'=>'Session not open']); exit; }
         $db->beginTransaction();
         try {
             $stmt = $db->prepare("INSERT INTO pilot_requisitions (session_id, item_id, portions_requested, required_kg, roundoff_kg, instock_kg, order_kg, carryover_portions, notes) VALUES (?,?,?,?,?,?,?,0,?)");
             foreach ($items as $item) {
+                $itemId = intval($item['item_id'] ?? 0);
+                // Custom/ad-hoc item — auto-create in pilot_items
+                if ($itemId === 0 && !empty($item['custom_name'])) {
+                    $customName = trim($item['custom_name']);
+                    $db->prepare("INSERT INTO pilot_items (name, category, unit_weight, weight_unit, portions_per_unit, portion_weight_kg) VALUES (?,'Custom',1000,'g',3.33,0.300)")
+                        ->execute([$customName]);
+                    $itemId = intval($db->lastInsertId());
+                    // Add stock entry for this kitchen
+                    $db->prepare("INSERT IGNORE INTO pilot_kitchen_stock (item_id, kitchen_id, portions_available, kg_available) VALUES (?,?,0,0)")
+                        ->execute([$itemId, $sess['kitchen_id']]);
+                }
+                if ($itemId < 1) continue;
                 $stmt->execute([
                     $sessionId,
-                    intval($item['item_id']),
+                    $itemId,
                     intval($item['portions']),
                     round(floatval($item['required_kg']), 2),
                     round(floatval($item['roundoff_kg']), 2),

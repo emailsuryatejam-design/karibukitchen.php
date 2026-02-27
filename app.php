@@ -99,6 +99,8 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
         .kitchen-switcher select option { color: #333; }
         .auto-calc { background: #f0f4ff; font-weight: 600; text-align: center; }
         .uom-badge { background: #e8ecf1; color: var(--primary); padding: 1px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+        .border-dashed { border: 2px dashed #dee2e6 !important; }
+        .item-row.selected { background: #f0f7ff; }
         .hamburger { display:none; background:none; border:none; color:#fff; font-size:1.5rem; cursor:pointer; padding:4px 8px; }
         .drawer-handle { display:none; }
 
@@ -365,30 +367,35 @@ function include_chef_dashboard($db, $session, $today, $kitchenId) {
 function include_requisition($db, $session, $today, $kitchenId) {
     if (!$session) { echo '<div class="alert alert-warning">Please set the guest count first.</div>'; return; }
 
-    // Already submitted - show read-only
+    // Already submitted - show read-only (simplified for chef)
     if ($session['status'] !== 'open') {
-        $stmt = $db->prepare("SELECT r.*, i.name, i.category, i.portion_weight_kg FROM pilot_requisitions r JOIN pilot_items i ON r.item_id = i.id WHERE r.session_id = ? ORDER BY i.category, i.name");
+        $stmt = $db->prepare("SELECT r.*, i.name, i.category FROM pilot_requisitions r JOIN pilot_items i ON r.item_id = i.id WHERE r.session_id = ? ORDER BY i.category, i.name");
         $stmt->execute([$session['id']]); $items = $stmt->fetchAll();
-        echo '<h4 class="mb-3">Today\'s Requisition <span class="badge bg-info">Submitted</span></h4>';
-        echo '<p class="text-muted">Bed Nights: <strong>'.$session['guest_count'].'</strong> | All quantities in <span class="uom-badge">KG</span></p>';
-        echo '<div id="printRequisition" class="table-responsive"><h5 class="mb-2 d-none d-print-block">Requisition - '.date('D, M j, Y').' | Bed Nights: '.$session['guest_count'].'</h5>';
-        echo '<table class="table table-striped table-sm" id="reqTable"><thead><tr><th>#</th><th>Item</th><th>UOM</th><th>Portion</th><th>Per KG</th><th>Portions</th><th>Required</th><th>Round Off</th><th>In Stock</th><th>Order</th><th>Notes</th></tr></thead><tbody>';
-        $n=1; $totalOrder=0;
+        echo '<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">';
+        echo '<h4 class="mb-0">Today\'s Requisition</h4>';
+        echo '<span class="badge bg-success fs-6"><i class="bi bi-check-circle"></i> Submitted</span>';
+        echo '</div>';
+        echo '<div class="row g-3 mb-3">';
+        echo '<div class="col-auto"><div class="bg-white rounded-3 px-3 py-2 border"><small class="text-muted d-block">Bed Nights</small><strong class="fs-5">'.$session['guest_count'].'</strong></div></div>';
+        $totalItems = count($items); $totalOrder = array_sum(array_column($items, 'order_kg'));
+        echo '<div class="col-auto"><div class="bg-white rounded-3 px-3 py-2 border"><small class="text-muted d-block">Items Ordered</small><strong class="fs-5">'.$totalItems.'</strong></div></div>';
+        echo '<div class="col-auto"><div class="bg-white rounded-3 px-3 py-2 border"><small class="text-muted d-block">Total Order</small><strong class="fs-5 text-primary">'.number_format($totalOrder,2).' kg</strong></div></div>';
+        echo '</div>';
+
+        echo '<div id="printRequisition"><h5 class="mb-2 d-none d-print-block">Requisition - '.date('D, M j, Y').' | Bed Nights: '.$session['guest_count'].'</h5>';
+        echo '<div class="table-responsive"><table class="table table-striped table-sm" id="reqTable"><thead><tr><th>#</th><th>Item</th><th>Category</th><th class="text-center">Portions</th><th class="text-end">Order (kg)</th><th>Notes</th></tr></thead><tbody>';
+        $n=1;
         foreach($items as $it) {
-            $perKg = $it['portion_weight_kg'] > 0 ? round(1/$it['portion_weight_kg'], 2) : 0;
-            $totalOrder += $it['order_kg'];
-            echo '<tr><td>'.$n++.'</td><td>'.htmlspecialchars($it['name']).'</td><td>kg</td>';
-            echo '<td>'.number_format($it['portion_weight_kg'],3).'</td><td>'.$perKg.'</td>';
-            echo '<td><strong>'.$it['portions_requested'].'</strong></td>';
-            echo '<td>'.number_format($it['required_kg'],2).'</td>';
-            echo '<td>'.number_format($it['roundoff_kg'],2).'</td>';
-            echo '<td>'.($it['instock_kg']>0?'<span class="kg-badge">'.$it['instock_kg'].'</span>':'0.00').'</td>';
-            echo '<td><strong>'.number_format($it['order_kg'],2).'</strong></td>';
-            echo '<td>'.htmlspecialchars($it['notes']??'').'</td></tr>';
+            echo '<tr><td>'.$n++.'</td>';
+            echo '<td><strong>'.htmlspecialchars($it['name']).'</strong></td>';
+            echo '<td><span class="text-muted">'.htmlspecialchars($it['category']).'</span></td>';
+            echo '<td class="text-center">'.$it['portions_requested'].'</td>';
+            echo '<td class="text-end fw-bold">'.number_format($it['order_kg'],2).'</td>';
+            echo '<td>'.htmlspecialchars($it['notes']??'-').'</td></tr>';
         }
-        echo '</tbody><tfoot><tr class="fw-bold"><td colspan="9">TOTAL ORDER</td><td>'.number_format($totalOrder,2).' kg</td><td></td></tr></tfoot></table></div>';
-        echo '<div class="no-print d-flex gap-2"><button class="btn btn-outline-primary" onclick="printSection(\'printRequisition\')"><i class="bi bi-printer"></i> Print</button>';
-        echo '<button class="btn btn-outline-success" onclick="downloadCSV(\'reqTable\',\'requisition_'.$today.'\')"><i class="bi bi-download"></i> CSV</button></div>';
+        echo '</tbody><tfoot><tr class="fw-bold table-light"><td colspan="4" class="text-end">TOTAL ORDER</td><td class="text-end text-primary">'.number_format($totalOrder,2).' kg</td><td></td></tr></tfoot></table></div></div>';
+        echo '<div class="no-print d-flex gap-2"><button class="btn btn-outline-primary btn-sm" onclick="printSection(\'printRequisition\')"><i class="bi bi-printer"></i> Print</button>';
+        echo '<button class="btn btn-outline-success btn-sm" onclick="downloadCSV(\'reqTable\',\'requisition_'.$today.'\')"><i class="bi bi-download"></i> CSV</button></div>';
         return;
     }
 
@@ -397,54 +404,104 @@ function include_requisition($db, $session, $today, $kitchenId) {
     $items->execute([$kitchenId]); $items = $items->fetchAll();
     $categories = []; foreach($items as $item) $categories[$item['category']][] = $item;
 ?>
-    <h4 class="mb-3">Create Requisition <small class="text-muted">| Bed Nights: <?= $session['guest_count'] ?></small></h4>
-    <p class="text-muted mb-3"><i class="bi bi-info-circle"></i> All quantities in <span class="uom-badge">KG</span>. Enter portions needed — order auto-calculates.</p>
+    <div class="d-flex align-items-center gap-3 mb-2 flex-wrap">
+        <h4 class="mb-0">Create Requisition</h4>
+        <span class="badge bg-secondary fs-6"><?= $session['guest_count'] ?> Bed Nights</span>
+        <span class="text-muted ms-auto" style="font-size:0.85rem"><i class="bi bi-calendar"></i> <?= date('D, M j, Y') ?></span>
+    </div>
+    <p class="text-muted mb-3" style="font-size:0.85rem"><i class="bi bi-info-circle"></i> Select items and enter portions. Order quantity in kg is auto-calculated.</p>
+
     <form id="requisitionForm"><input type="hidden" name="session_id" value="<?= $session['id'] ?>">
-        <div class="card mb-3"><div class="card-header d-flex justify-content-between align-items-center"><span><i class="bi bi-cart-plus"></i> Select Items & Portions</span><input type="text" id="itemSearch" class="form-control form-control-sm" placeholder="Search items..." style="width:200px"></div>
-        <div class="card-body p-0">
+        <!-- Search bar -->
+        <div class="input-group mb-3 no-print" style="max-width:400px">
+            <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
+            <input type="text" id="itemSearch" class="form-control" placeholder="Search items...">
+        </div>
+
         <?php foreach ($categories as $cat => $catItems): ?>
-            <div class="category-header"><?= htmlspecialchars($cat) ?> (<?= count($catItems) ?> items)</div>
-            <div class="table-responsive"><table class="table table-sm mb-0"><thead><tr>
-                <th style="width:35px"></th><th>Item</th><th>UOM</th><th>Portion<br><small>kg</small></th><th>Per<br><small>KG</small></th>
-                <th>In Stock<br><small>kg</small></th><th style="width:90px">Portions<br><small>Needed</small></th>
-                <th>Required<br><small>kg</small></th><th>Round Off<br><small>kg</small></th><th>Order<br><small>kg</small></th><th style="width:140px">Notes</th>
-            </tr></thead><tbody>
+        <div class="card mb-3 category-card">
+            <div class="card-header py-2 d-flex align-items-center" style="background:var(--primary);color:#fff;cursor:pointer;" onclick="$(this).next().slideToggle(200);$(this).find('.bi-chevron-down,.bi-chevron-up').toggleClass('bi-chevron-down bi-chevron-up');">
+                <strong><?= htmlspecialchars($cat) ?></strong>
+                <span class="badge bg-light text-dark ms-2"><?= count($catItems) ?></span>
+                <i class="bi bi-chevron-down ms-auto"></i>
+            </div>
+            <div class="card-body p-0">
             <?php foreach($catItems as $item): ?>
-            <tr class="item-row" data-name="<?= strtolower($item['name']) ?>" data-portion-kg="<?= $item['portion_weight_kg'] ?>" data-instock-kg="<?= number_format($item['stock_kg'],2,'.','') ?>">
-                <td><input type="checkbox" class="form-check-input item-check" data-id="<?= $item['id'] ?>"></td>
-                <td><?= htmlspecialchars($item['name']) ?></td>
-                <td><span class="uom-badge">kg</span></td>
-                <td><?= number_format($item['portion_weight_kg'],3) ?></td>
-                <td><?= $item['portion_weight_kg']>0 ? round(1/$item['portion_weight_kg'],2) : 0 ?></td>
-                <td><?= $item['stock_kg']>0 ? '<span class="kg-badge">'.$item['stock_kg'].'</span>' : '<span class="text-muted">0.00</span>' ?></td>
-                <td><input type="number" class="form-control form-control-sm portions-input" min="0" value="0" disabled></td>
-                <td class="auto-calc required-kg">0.00</td>
-                <td class="auto-calc roundoff-kg">0.00</td>
-                <td class="auto-calc order-kg fw-bold">0.00</td>
-                <td><input type="text" class="form-control form-control-sm notes-input" placeholder="—" disabled></td>
-            </tr>
-            <?php endforeach; ?></tbody></table></div>
+                <div class="item-row d-flex align-items-center px-3 py-2 border-bottom" data-name="<?= strtolower($item['name']) ?>" data-id="<?= $item['id'] ?>" data-portion-kg="<?= $item['portion_weight_kg'] ?>" data-instock-kg="<?= number_format($item['stock_kg'],2,'.','') ?>">
+                    <div class="form-check me-3">
+                        <input type="checkbox" class="form-check-input item-check" id="chk_<?= $item['id'] ?>">
+                    </div>
+                    <div class="flex-grow-1">
+                        <label for="chk_<?= $item['id'] ?>" class="mb-0 fw-semibold" style="cursor:pointer"><?= htmlspecialchars($item['name']) ?></label>
+                        <?php if ($item['stock_kg'] > 0): ?>
+                            <span class="kg-badge ms-2"><i class="bi bi-box-seam"></i> <?= number_format($item['stock_kg'],2) ?> kg in stock</span>
+                        <?php endif; ?>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="input-group input-group-sm" style="width:120px">
+                            <input type="number" class="form-control text-center portions-input" min="0" value="0" disabled placeholder="0">
+                            <span class="input-group-text" style="font-size:0.75rem">ptn</span>
+                        </div>
+                        <div class="text-end" style="min-width:70px">
+                            <span class="order-kg fw-bold text-primary" style="font-size:1.05rem">0</span>
+                            <small class="text-muted"> kg</small>
+                        </div>
+                    </div>
+                    <!-- hidden calc fields -->
+                    <span class="required-kg d-none">0.00</span>
+                    <span class="roundoff-kg d-none">0.00</span>
+                </div>
+            <?php endforeach; ?>
+            </div>
+        </div>
         <?php endforeach; ?>
-        </div></div>
-        <div class="d-flex gap-2 flex-wrap align-items-center">
-            <button type="submit" class="btn btn-primary btn-lg"><i class="bi bi-send"></i> Submit Requisition to Store</button>
-            <span class="text-muted" id="reqSummary"></span>
+
+        <!-- Ad-hoc / Custom Items -->
+        <div class="card mb-3 border-dashed" id="customItemsCard">
+            <div class="card-header py-2 d-flex align-items-center" style="background:#f8f9fa;color:var(--primary);cursor:pointer;" onclick="$('#customItemsBody').slideToggle(200);$(this).find('.bi-chevron-down,.bi-chevron-up').toggleClass('bi-chevron-down bi-chevron-up');">
+                <i class="bi bi-plus-circle me-2"></i><strong>Add Custom Items</strong>
+                <span class="text-muted ms-2" style="font-size:0.8rem">( items not in list )</span>
+                <i class="bi bi-chevron-down ms-auto"></i>
+            </div>
+            <div class="card-body" id="customItemsBody" style="display:none">
+                <div id="customRows"></div>
+                <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="addCustomRow"><i class="bi bi-plus-lg"></i> Add Item</button>
+            </div>
+        </div>
+
+        <!-- Sticky submit bar -->
+        <div class="bg-white border-top p-3 no-print" style="position:sticky;bottom:0;z-index:100;box-shadow:0 -4px 12px rgba(0,0,0,0.08);border-radius:12px 12px 0 0;">
+            <div class="d-flex gap-3 align-items-center flex-wrap">
+                <span class="text-muted" id="reqSummary"><i class="bi bi-cart"></i> No items selected</span>
+                <button type="submit" class="btn btn-primary ms-auto px-4"><i class="bi bi-send"></i> Submit to Store</button>
+            </div>
         </div>
     </form>
+
     <script>
     $(document).ready(function(){
-        // Toggle row inputs on checkbox change
+        // Toggle row on checkbox
         $('.item-check').on('change', function(){
-            const row = $(this).closest('tr');
+            const row = $(this).closest('.item-row');
             const on = $(this).is(':checked');
-            row.find('.portions-input, .notes-input').prop('disabled', !on);
-            if (on) { row.find('.portions-input').val(1).focus().trigger('input'); }
-            else { row.find('.portions-input').val(0).trigger('input'); }
+            row.find('.portions-input').prop('disabled', !on);
+            if (on) {
+                row.find('.portions-input').val(1).focus().trigger('input');
+                row.css('background','#f0f7ff');
+            } else {
+                row.find('.portions-input').val(0).trigger('input');
+                row.css('background','');
+            }
         });
 
-        // Auto-calculate kg values when portions change
+        // Clicking item name toggles checkbox
+        $('.item-row label').on('click', function(e){
+            // label's for attribute handles this already
+        });
+
+        // Auto-calculate on portions change
         $('.portions-input').on('input', function(){
-            const row = $(this).closest('tr');
+            const row = $(this).closest('.item-row');
             const portions = parseInt($(this).val()) || 0;
             const portionKg = parseFloat(row.data('portion-kg')) || 0.3;
             const instockKg = parseFloat(row.data('instock-kg')) || 0;
@@ -455,51 +512,105 @@ function include_requisition($db, $session, $today, $kitchenId) {
 
             row.find('.required-kg').text(requiredKg.toFixed(2));
             row.find('.roundoff-kg').text(roundoffKg.toFixed(2));
-            row.find('.order-kg').text(orderKg.toFixed(2));
-
+            row.find('.order-kg').text(orderKg > 0 ? orderKg.toFixed(1) : '0');
             updateSummary();
         });
 
         function updateSummary() {
             let items = 0, totalKg = 0;
+            // Standard items
             $('.item-check:checked').each(function(){
-                const row = $(this).closest('tr');
-                const order = parseFloat(row.find('.order-kg').text()) || 0;
-                if (order > 0) { items++; totalKg += order; }
+                const row = $(this).closest('.item-row');
+                const p = parseInt(row.find('.portions-input').val()) || 0;
+                if (p > 0) {
+                    items++;
+                    totalKg += parseFloat(row.find('.roundoff-kg').text()) || 0;
+                    totalKg -= parseFloat(row.data('instock-kg')) || 0;
+                }
             });
-            $('#reqSummary').html(items > 0 ? '<i class="bi bi-box-seam"></i> ' + items + ' items, <strong>' + totalKg.toFixed(2) + ' kg</strong> total order' : '');
+            // Custom items
+            $('#customRows .custom-row').each(function(){
+                const kg = parseFloat($(this).find('.custom-kg').val()) || 0;
+                if (kg > 0) { items++; totalKg += kg; }
+            });
+            totalKg = Math.max(0, totalKg);
+            if (items > 0) {
+                $('#reqSummary').html('<i class="bi bi-box-seam"></i> <strong>' + items + ' items</strong> &middot; <strong class="text-primary">' + totalKg.toFixed(1) + ' kg</strong> total order');
+            } else {
+                $('#reqSummary').html('<i class="bi bi-cart"></i> No items selected');
+            }
         }
 
         // Search filter
         $('#itemSearch').on('input', function(){
             const q = $(this).val().toLowerCase();
-            $('.item-row').each(function(){ $(this).toggle($(this).data('name').includes(q)); });
+            if (!q) { $('.item-row, .category-card').show(); return; }
+            $('.category-card').each(function(){
+                let hasVisible = false;
+                $(this).find('.item-row').each(function(){
+                    const match = $(this).data('name').toString().includes(q);
+                    $(this).toggle(match);
+                    if (match) hasVisible = true;
+                });
+                $(this).toggle(hasVisible);
+            });
         });
 
-        // Submit requisition
+        // Custom items
+        let customCount = 0;
+        $('#addCustomRow').on('click', function(){
+            customCount++;
+            const html = '<div class="custom-row d-flex align-items-center gap-2 mb-2" data-idx="'+customCount+'">' +
+                '<input type="text" class="form-control form-control-sm custom-name" placeholder="Item name" style="flex:2">' +
+                '<div class="input-group input-group-sm" style="flex:1;max-width:140px"><input type="number" step="0.1" min="0" class="form-control text-center custom-kg" placeholder="0" value=""><span class="input-group-text">kg</span></div>' +
+                '<input type="text" class="form-control form-control-sm custom-notes" placeholder="Notes" style="flex:1">' +
+                '<button type="button" class="btn btn-outline-danger btn-sm remove-custom"><i class="bi bi-x-lg"></i></button></div>';
+            $('#customRows').append(html);
+        });
+        $(document).on('click', '.remove-custom', function(){ $(this).closest('.custom-row').remove(); updateSummary(); });
+        $(document).on('input', '.custom-kg', function(){ updateSummary(); });
+
+        // Submit
         $('#requisitionForm').on('submit', function(e){
             e.preventDefault();
-            const checked = $('.item-check:checked');
-            if (!checked.length) { alert('Select at least one item.'); return; }
             let items = [];
-            checked.each(function(){
-                const id = $(this).data('id');
-                const row = $(this).closest('tr');
+            // Standard items
+            $('.item-check:checked').each(function(){
+                const row = $(this).closest('.item-row');
                 const portions = parseInt(row.find('.portions-input').val()) || 0;
                 if (portions > 0) {
                     items.push({
-                        item_id: id,
+                        item_id: row.data('id'),
                         portions: portions,
                         required_kg: parseFloat(row.find('.required-kg').text()) || 0,
                         roundoff_kg: parseFloat(row.find('.roundoff-kg').text()) || 0,
                         instock_kg: parseFloat(row.data('instock-kg')) || 0,
-                        order_kg: parseFloat(row.find('.order-kg').text()) || 0,
-                        notes: row.find('.notes-input').val() || ''
+                        order_kg: Math.max(0, (parseFloat(row.find('.roundoff-kg').text())||0) - (parseFloat(row.data('instock-kg'))||0)),
+                        notes: ''
                     });
                 }
             });
-            if (!items.length) { alert('Enter portions for at least one item.'); return; }
-            if (!confirm('Submit requisition? (' + items.length + ' items)')) return;
+            // Custom items
+            $('#customRows .custom-row').each(function(){
+                const name = $(this).find('.custom-name').val().trim();
+                const kg = parseFloat($(this).find('.custom-kg').val()) || 0;
+                const notes = $(this).find('.custom-notes').val().trim();
+                if (name && kg > 0) {
+                    items.push({
+                        item_id: 0,
+                        custom_name: name,
+                        portions: 0,
+                        required_kg: kg,
+                        roundoff_kg: kg,
+                        instock_kg: 0,
+                        order_kg: kg,
+                        notes: notes ? notes : 'Custom: ' + name
+                    });
+                }
+            });
+
+            if (!items.length) { alert('Select at least one item or add a custom item.'); return; }
+            if (!confirm('Submit requisition with ' + items.length + ' item(s) to the store?')) return;
             $.post('api.php', {action:'submit_requisition', session_id:<?=$session['id']?>, items:JSON.stringify(items)}, function(res){
                 if (res.success) { alert('Requisition submitted!'); location.href='?page=chef_dashboard'; }
                 else alert(res.message || 'Error');
