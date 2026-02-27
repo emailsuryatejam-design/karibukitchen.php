@@ -369,7 +369,7 @@ function include_requisition($db, $session, $today, $kitchenId) {
 
     // Already submitted - show read-only (simplified for chef)
     if ($session['status'] !== 'open') {
-        $stmt = $db->prepare("SELECT r.*, i.name, i.category FROM pilot_requisitions r JOIN pilot_items i ON r.item_id = i.id WHERE r.session_id = ? ORDER BY i.category, i.name");
+        $stmt = $db->prepare("SELECT r.*, i.name, i.category, i.portion_weight_kg FROM pilot_requisitions r JOIN pilot_items i ON r.item_id = i.id WHERE r.session_id = ? ORDER BY i.category, i.name");
         $stmt->execute([$session['id']]); $items = $stmt->fetchAll();
         echo '<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">';
         echo '<h4 class="mb-0">Today\'s Requisition</h4>';
@@ -383,17 +383,18 @@ function include_requisition($db, $session, $today, $kitchenId) {
         echo '</div>';
 
         echo '<div id="printRequisition"><h5 class="mb-2 d-none d-print-block">Requisition - '.date('D, M j, Y').' | Bed Nights: '.$session['guest_count'].'</h5>';
-        echo '<div class="table-responsive"><table class="table table-striped table-sm" id="reqTable"><thead><tr><th>#</th><th>Item</th><th>Category</th><th class="text-center">Portions</th><th class="text-end">Order (kg)</th><th>Notes</th></tr></thead><tbody>';
+        echo '<div class="table-responsive"><table class="table table-striped table-sm" id="reqTable"><thead><tr><th>#</th><th>Item</th><th>Category</th><th class="text-center">Wt/Portion</th><th class="text-center">Portions</th><th class="text-end">Order (kg)</th><th>Notes</th></tr></thead><tbody>';
         $n=1;
         foreach($items as $it) {
             echo '<tr><td>'.$n++.'</td>';
             echo '<td><strong>'.htmlspecialchars($it['name']).'</strong></td>';
             echo '<td><span class="text-muted">'.htmlspecialchars($it['category']).'</span></td>';
+            echo '<td class="text-center"><small>'.number_format($it['portion_weight_kg'],3).' kg</small></td>';
             echo '<td class="text-center">'.$it['portions_requested'].'</td>';
             echo '<td class="text-end fw-bold">'.number_format($it['order_kg'],2).'</td>';
             echo '<td>'.htmlspecialchars($it['notes']??'-').'</td></tr>';
         }
-        echo '</tbody><tfoot><tr class="fw-bold table-light"><td colspan="4" class="text-end">TOTAL ORDER</td><td class="text-end text-primary">'.number_format($totalOrder,2).' kg</td><td></td></tr></tfoot></table></div></div>';
+        echo '</tbody><tfoot><tr class="fw-bold table-light"><td colspan="5" class="text-end">TOTAL ORDER</td><td class="text-end text-primary">'.number_format($totalOrder,2).' kg</td><td></td></tr></tfoot></table></div></div>';
         echo '<div class="no-print d-flex gap-2"><button class="btn btn-outline-primary btn-sm" onclick="printSection(\'printRequisition\')"><i class="bi bi-printer"></i> Print</button>';
         echo '<button class="btn btn-outline-success btn-sm" onclick="downloadCSV(\'reqTable\',\'requisition_'.$today.'\')"><i class="bi bi-download"></i> CSV</button></div>';
         return;
@@ -428,19 +429,20 @@ function include_requisition($db, $session, $today, $kitchenId) {
             <div class="card-body p-0">
             <?php foreach($catItems as $item): ?>
                 <div class="item-row d-flex align-items-center px-3 py-2 border-bottom" data-name="<?= strtolower($item['name']) ?>" data-id="<?= $item['id'] ?>" data-portion-kg="<?= $item['portion_weight_kg'] ?>" data-instock-kg="<?= number_format($item['stock_kg'],2,'.','') ?>">
-                    <div class="form-check me-3">
+                    <div class="form-check me-2">
                         <input type="checkbox" class="form-check-input item-check" id="chk_<?= $item['id'] ?>">
                     </div>
-                    <div class="flex-grow-1">
-                        <label for="chk_<?= $item['id'] ?>" class="mb-0 fw-semibold" style="cursor:pointer"><?= htmlspecialchars($item['name']) ?></label>
+                    <div style="flex:1;min-width:0;">
+                        <label for="chk_<?= $item['id'] ?>" class="mb-0 fw-semibold d-block text-truncate" style="cursor:pointer"><?= htmlspecialchars($item['name']) ?></label>
+                        <small class="text-muted"><?= number_format($item['portion_weight_kg'],3) ?> kg / portion</small>
                         <?php if ($item['stock_kg'] > 0): ?>
                             <span class="kg-badge ms-2"><i class="bi bi-box-seam"></i> <?= number_format($item['stock_kg'],2) ?> kg in stock</span>
                         <?php endif; ?>
                     </div>
                     <div class="d-flex align-items-center gap-2">
-                        <div class="input-group input-group-sm" style="width:120px">
-                            <input type="number" class="form-control text-center portions-input" min="0" value="0" disabled placeholder="0">
-                            <span class="input-group-text" style="font-size:0.75rem">ptn</span>
+                        <div class="input-group input-group-sm" style="width:110px">
+                            <input type="number" class="form-control text-center portions-input" min="0" value="" placeholder="0">
+                            <span class="input-group-text" style="font-size:0.7rem">ptn</span>
                         </div>
                         <div class="text-end" style="min-width:70px">
                             <span class="order-kg fw-bold text-primary" style="font-size:1.05rem">0</span>
@@ -480,29 +482,36 @@ function include_requisition($db, $session, $today, $kitchenId) {
 
     <script>
     $(document).ready(function(){
-        // Toggle row on checkbox
+        // Checkbox toggles highlight
         $('.item-check').on('change', function(){
             const row = $(this).closest('.item-row');
             const on = $(this).is(':checked');
-            row.find('.portions-input').prop('disabled', !on);
             if (on) {
-                row.find('.portions-input').val(1).focus().trigger('input');
+                if (!parseInt(row.find('.portions-input').val())) {
+                    row.find('.portions-input').val(1).focus().trigger('input');
+                }
                 row.css('background','#f0f7ff');
             } else {
-                row.find('.portions-input').val(0).trigger('input');
+                row.find('.portions-input').val('').trigger('input');
                 row.css('background','');
             }
         });
 
-        // Clicking item name toggles checkbox
-        $('.item-row label').on('click', function(e){
-            // label's for attribute handles this already
-        });
-
-        // Auto-calculate on portions change
+        // Typing portions auto-checks / unchecks the checkbox
         $('.portions-input').on('input', function(){
             const row = $(this).closest('.item-row');
             const portions = parseInt($(this).val()) || 0;
+            const chk = row.find('.item-check');
+
+            // Auto-check when portions > 0, uncheck when 0
+            if (portions > 0 && !chk.is(':checked')) {
+                chk.prop('checked', true);
+                row.css('background','#f0f7ff');
+            } else if (portions === 0 && chk.is(':checked')) {
+                chk.prop('checked', false);
+                row.css('background','');
+            }
+
             const portionKg = parseFloat(row.data('portion-kg')) || 0.3;
             const instockKg = parseFloat(row.data('instock-kg')) || 0;
 
