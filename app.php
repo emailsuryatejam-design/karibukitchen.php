@@ -860,24 +860,196 @@ function include_day_close($db, $session, $kitchenId) {
 function include_store_dashboard($db, $today, $kitchenId) {
     $stmt = $db->prepare("SELECT ds.*, u.name as chef_name, k.name as kitchen_name FROM pilot_daily_sessions ds JOIN pilot_users u ON ds.chef_id=u.id LEFT JOIN pilot_kitchens k ON ds.kitchen_id=k.id WHERE ds.session_date=? AND ds.kitchen_id=?");
     $stmt->execute([$today, $kitchenId]); $session = $stmt->fetch();
-    if (!$session) { echo '<div class="alert alert-info"><i class="bi bi-info-circle"></i> No requisition from kitchen yet today.</div>'; return; }
-    $reqCount = $db->prepare("SELECT COUNT(*) FROM pilot_requisitions WHERE session_id=?"); $reqCount->execute([$session['id']]); $totalItems = $reqCount->fetchColumn();
-    $totalKgStmt = $db->prepare("SELECT COALESCE(SUM(order_kg),0) FROM pilot_requisitions WHERE session_id=?"); $totalKgStmt->execute([$session['id']]); $totalOrderKg = $totalKgStmt->fetchColumn();
-    $statusLabels = ['open'=>['Kitchen Preparing','bg-secondary'],'requisition_sent'=>['Pending Supply','bg-warning text-dark'],'supplied'=>['Supplied','bg-success'],'day_closed'=>['Day Closed','bg-secondary']];
-    $si = $statusLabels[$session['status']] ?? ['Unknown','bg-dark'];
+
+    // No session yet
+    if (!$session) {
 ?>
-    <h4 class="mb-4">Store Dashboard</h4>
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3"><div class="card stat-card"><div class="stat-number"><?=$session['guest_count']?></div><div class="stat-label">Bed Nights</div></div></div>
-        <div class="col-6 col-md-3"><div class="card stat-card"><div class="stat-number"><?=$totalItems?></div><div class="stat-label">Items Ordered</div></div></div>
-        <div class="col-6 col-md-3"><div class="card stat-card"><div class="stat-number"><?=number_format($totalOrderKg,1)?> <small>kg</small></div><div class="stat-label">Total Order</div></div></div>
-        <div class="col-6 col-md-3"><div class="card stat-card"><span class="badge <?=$si[1]?> status-badge fs-6"><?=$si[0]?></span><div class="stat-label mt-2">Status</div></div></div>
+    <div class="text-center py-5">
+        <i class="bi bi-inbox" style="font-size:4rem;color:#ccc;"></i>
+        <h4 class="mt-3 text-muted">No Requisition Yet</h4>
+        <p class="text-muted">Waiting for kitchen to create today's requisition.<br>Check back soon or view past records.</p>
+        <a href="?page=reports" class="btn btn-outline-primary mt-2"><i class="bi bi-file-earmark-bar-graph"></i> View Reports</a>
     </div>
-    <?php if($session['status']==='requisition_sent'): ?>
-        <a href="?page=supply" class="btn btn-primary btn-lg"><i class="bi bi-truck"></i> Supply Items Now</a>
-    <?php elseif($session['status']==='supplied'): ?>
-        <div class="alert alert-success"><i class="bi bi-check-circle"></i> Items supplied. Waiting for kitchen day close.</div>
+<?php return; }
+
+    // Fetch order details
+    $reqItems = $db->prepare("SELECT r.*, i.name, i.category FROM pilot_requisitions r JOIN pilot_items i ON r.item_id=i.id WHERE r.session_id=? ORDER BY i.category, i.name");
+    $reqItems->execute([$session['id']]); $items = $reqItems->fetchAll();
+    $totalItems = count($items);
+    $totalOrderKg = array_sum(array_column($items, 'order_kg'));
+    $categories = []; foreach($items as $it) $categories[$it['category']][] = $it;
+
+    // If supplied, get supply data
+    $supplyData = [];
+    if (in_array($session['status'], ['supplied','day_closed'])) {
+        $ss = $db->prepare("SELECT ss.*, r.item_id FROM pilot_store_supplies ss JOIN pilot_requisitions r ON ss.requisition_id=r.id WHERE r.session_id=?");
+        $ss->execute([$session['id']]); $supplyData = $ss->fetchAll(PDO::FETCH_GROUP|PDO::FETCH_UNIQUE);
+    }
+    $totalSupplied = 0;
+    foreach($items as $it) {
+        $s = $supplyData[$it['item_id']] ?? null;
+        if ($s) $totalSupplied += $s['kg_supplied'];
+    }
+
+    // Status config
+    $statusMap = [
+        'open'             => ['Kitchen Preparing', 'secondary', 'bi-hourglass-split', 0],
+        'requisition_sent' => ['Pending Your Supply', 'warning',  'bi-bell-fill',       1],
+        'supplied'         => ['Supplied',           'success',   'bi-check-circle-fill',2],
+        'day_closed'       => ['Day Closed',         'secondary', 'bi-lock-fill',        3],
+    ];
+    $si = $statusMap[$session['status']] ?? ['Unknown','dark','bi-question-circle',0];
+    $step = $si[3];
+?>
+    <!-- Header -->
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <h4 class="mb-0"><i class="bi bi-shop"></i> Store Dashboard</h4>
+        <span class="badge bg-<?=$si[1]?> fs-6"><i class="bi <?=$si[2]?>"></i> <?=$si[0]?></span>
+        <span class="text-muted ms-auto" style="font-size:0.85rem"><i class="bi bi-calendar3"></i> <?=date('l, M j, Y')?></span>
+    </div>
+
+    <!-- Info bar -->
+    <div class="card mb-3" style="background:linear-gradient(135deg,var(--primary),var(--dark));color:#fff;">
+        <div class="card-body py-3">
+            <div class="row g-2 align-items-center text-center">
+                <div class="col-6 col-md-3">
+                    <div style="font-size:0.75rem;opacity:0.7;">Kitchen</div>
+                    <div class="fw-bold"><?=htmlspecialchars($session['kitchen_name'])?></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div style="font-size:0.75rem;opacity:0.7;">Chef</div>
+                    <div class="fw-bold"><?=htmlspecialchars($session['chef_name'])?></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div style="font-size:0.75rem;opacity:0.7;">Bed Nights</div>
+                    <div class="fw-bold fs-5"><?=$session['guest_count']?></div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div style="font-size:0.75rem;opacity:0.7;">Requisition Time</div>
+                    <div class="fw-bold"><?=date('g:i A', strtotime($session['created_at'] ?? $today))?></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Steps -->
+    <div class="card mb-3">
+        <div class="card-body py-2 px-3">
+            <div class="d-flex align-items-center justify-content-between" style="font-size:0.8rem;">
+                <?php
+                $steps = [['Chef Orders','bi-cart-plus'],['Store Supplies','bi-truck'],['Chef Reviews','bi-clipboard-check'],['Day Close','bi-moon-stars']];
+                foreach($steps as $i => $s):
+                    $done = $i < $step; $active = $i === $step;
+                    $color = $done ? 'text-success' : ($active ? 'text-primary fw-bold' : 'text-muted');
+                ?>
+                <div class="text-center <?=$color?>">
+                    <i class="bi <?=$done?'bi-check-circle-fill':($active?$s[1]:$s[1])?>" style="font-size:1.2rem;"></i>
+                    <div class="mt-1"><?=$s[0]?></div>
+                </div>
+                <?php if ($i < 3): ?>
+                    <div style="flex:1;height:2px;margin:0 8px;background:<?=$done||$active?'var(--primary)':'#dee2e6'?>;"></div>
+                <?php endif; endforeach; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Row -->
+    <div class="row g-3 mb-3">
+        <div class="col-4">
+            <div class="card text-center py-3">
+                <div class="fs-3 fw-bold text-primary"><?=$totalItems?></div>
+                <div class="text-muted" style="font-size:0.8rem;">Items</div>
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="card text-center py-3">
+                <div class="fs-3 fw-bold text-primary"><?=number_format($totalOrderKg,1)?> <small class="fs-6">kg</small></div>
+                <div class="text-muted" style="font-size:0.8rem;">Total Ordered</div>
+            </div>
+        </div>
+        <div class="col-4">
+            <div class="card text-center py-3">
+                <div class="fs-3 fw-bold <?=$totalSupplied>0?'text-success':'text-muted'?>"><?=$totalSupplied>0?number_format($totalSupplied,1):'—'?> <?=$totalSupplied>0?'<small class="fs-6">kg</small>':''?></div>
+                <div class="text-muted" style="font-size:0.8rem;">Supplied</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action CTA -->
+    <?php if ($session['status'] === 'requisition_sent'): ?>
+    <div class="card mb-3 border-warning" style="background:#fff8f0;">
+        <div class="card-body text-center py-4">
+            <i class="bi bi-bell-fill text-warning" style="font-size:2.5rem;"></i>
+            <h5 class="mt-2 mb-1">New Requisition Received!</h5>
+            <p class="text-muted mb-3"><?=$totalItems?> items, <?=number_format($totalOrderKg,1)?> kg total — from Chef <?=htmlspecialchars($session['chef_name'])?></p>
+            <a href="?page=supply" class="btn btn-primary btn-lg px-5"><i class="bi bi-truck"></i> Supply Items Now</a>
+        </div>
+    </div>
+    <?php elseif ($session['status'] === 'supplied'): ?>
+    <div class="card mb-3 border-success" style="background:#f0fff4;">
+        <div class="card-body text-center py-3">
+            <i class="bi bi-check-circle-fill text-success" style="font-size:2rem;"></i>
+            <h5 class="mt-2 mb-1">Items Supplied</h5>
+            <p class="text-muted mb-0">Waiting for kitchen to review and do day close.</p>
+        </div>
+    </div>
+    <?php elseif ($session['status'] === 'day_closed'): ?>
+    <div class="card mb-3" style="background:#f8f9fa;">
+        <div class="card-body text-center py-3">
+            <i class="bi bi-lock-fill text-secondary" style="font-size:2rem;"></i>
+            <h5 class="mt-2 mb-1">Day Closed</h5>
+            <p class="text-muted mb-0">Today's session is complete.</p>
+        </div>
+    </div>
     <?php endif; ?>
+
+    <!-- Order Preview -->
+    <div class="card mb-3">
+        <div class="card-header d-flex align-items-center py-2" style="background:var(--primary);color:#fff;cursor:pointer;" onclick="$('#orderPreview').slideToggle(200);$(this).find('.bi-chevron-down,.bi-chevron-up').toggleClass('bi-chevron-down bi-chevron-up');">
+            <i class="bi bi-list-ul me-2"></i><strong>Order Details</strong>
+            <span class="badge bg-light text-dark ms-2"><?=$totalItems?> items</span>
+            <i class="bi bi-chevron-down ms-auto"></i>
+        </div>
+        <div class="card-body p-0" id="orderPreview">
+        <?php foreach ($categories as $cat => $catItems): ?>
+            <div class="px-3 py-1 fw-semibold" style="background:#e8ecf1;color:var(--primary);font-size:0.85rem;">
+                <?=htmlspecialchars($cat)?> <span class="badge bg-white text-dark"><?=count($catItems)?></span>
+            </div>
+            <?php foreach($catItems as $it):
+                $supply = null;
+                if ($supplyData) {
+                    foreach ($supplyData as $sid => $sd) { if ($sid == $it['item_id']) { $supply = $sd; break; } }
+                }
+                $short = $supply && $supply['kg_supplied'] < $it['order_kg'];
+            ?>
+            <div class="d-flex align-items-center px-3 py-2 border-bottom <?=$short?'':'']?>" <?=$short?'style="background:#fff5f5"':''?>>
+                <div style="flex:1;">
+                    <span class="fw-semibold"><?=htmlspecialchars($it['name'])?></span>
+                    <?php if ($it['notes']): ?><br><small class="text-muted"><i class="bi bi-sticky"></i> <?=htmlspecialchars($it['notes'])?></small><?php endif; ?>
+                </div>
+                <div class="text-end">
+                    <strong class="text-primary"><?=number_format($it['order_kg'],1)?> kg</strong>
+                    <?php if ($supply): ?>
+                        <br><small class="<?=$short?'text-danger fw-bold':'text-success'?>">
+                            <?=$short?'<i class="bi bi-exclamation-triangle"></i> ':'<i class="bi bi-check"></i> '?>
+                            <?=number_format($supply['kg_supplied'],1)?> kg supplied
+                        </small>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        <?php endforeach; ?>
+        </div>
+    </div>
+
+    <!-- Quick links -->
+    <div class="d-flex gap-2 flex-wrap no-print">
+        <?php if ($session['status'] === 'requisition_sent'): ?>
+            <a href="?page=supply" class="btn btn-primary"><i class="bi bi-truck"></i> Supply Items</a>
+        <?php endif; ?>
+        <a href="?page=supply" class="btn btn-outline-primary"><i class="bi bi-journal-text"></i> Supply Log</a>
+        <a href="?page=reports" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-bar-graph"></i> Reports</a>
+    </div>
 <?php }
 
 // ============================================================
