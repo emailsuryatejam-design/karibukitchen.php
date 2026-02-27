@@ -65,6 +65,8 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
     <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.0/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <style>
         :root { --primary: #0f3460; --accent: #e94560; --dark: #1a1a2e; --light-bg: #f4f6f9; }
         body { background: var(--light-bg); font-family: 'Segoe UI', system-ui, sans-serif; padding-bottom: 0; }
@@ -268,8 +270,6 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
         Powered by <strong style="color:rgba(255,255,255,0.7);">VyomaAI Studios</strong>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.0/dist/jquery.min.js"></script>
     <script>
     <?php if ($showGuestPopup): ?>
     $(document).ready(function() { new bootstrap.Modal('#guestModal').show(); $('#guestCount').focus(); });
