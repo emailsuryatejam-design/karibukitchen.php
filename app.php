@@ -4,7 +4,12 @@ requireLogin();
 
 $db = getDB();
 $role = getUserRole();
-$page = $_GET['page'] ?? ($role === 'store' ? 'store_dashboard' : 'chef_dashboard');
+$defaultPage = match($role) {
+    'store' => 'store_dashboard',
+    'admin' => 'manage_items',
+    default => 'chef_dashboard'
+};
+$page = $_GET['page'] ?? $defaultPage;
 $today = date('Y-m-d');
 
 // Get today's session if exists
@@ -12,7 +17,7 @@ $stmt = $db->prepare("SELECT * FROM pilot_daily_sessions WHERE session_date = ?"
 $stmt->execute([$today]);
 $todaySession = $stmt->fetch();
 
-// Check if chef needs guest count popup
+// Check if chef needs guest count popup (not admin or store)
 $showGuestPopup = ($role === 'chef' && !$todaySession && $page !== 'reports' && $page !== 'history');
 ?>
 <!DOCTYPE html>
