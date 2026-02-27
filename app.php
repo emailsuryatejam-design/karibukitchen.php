@@ -808,7 +808,8 @@ function include_manage_kitchens($db) {
     <?php endforeach; ?></tbody></table></div>
     <script>
     $('#addKitchenForm').on('submit',function(e){ e.preventDefault();
-        $.post('api.php',{action:'add_kitchen',name:$('[name=name]').val(),code:$('[name=code]').val(),location:$('[name=location]').val()},function(res){ if(res.success) location.reload(); else alert(res.message||'Error'); },'json');
+        var f = $('#addKitchenForm');
+        $.post('api.php',{action:'add_kitchen', name:f.find('[name=name]').val(), code:f.find('[name=code]').val(), location:f.find('[name=location]').val()},function(res){ if(res.success) location.reload(); else alert(res.message||'Error'); },'json');
     });
     function toggleKitchen(id,active){ $.post('api.php',{action:'toggle_kitchen',kitchen_id:id,is_active:active},function(res){ if(res.success) location.reload(); else alert(res.message); },'json'); }
     </script>
@@ -848,7 +849,8 @@ function include_manage_users($db) {
     <?php endforeach; ?></tbody></table></div>
     <script>
     $('#addUserForm').on('submit',function(e){ e.preventDefault();
-        $.post('api.php',{action:'add_user',username:$('[name=username]').val(),password:$('[name=password]').val(),fullname:$('[name=fullname]').val(),role:$('[name=role]').val(),kitchen_id:$('[name=kitchen_id]').val()},function(res){ if(res.success) location.reload(); else alert(res.message||'Error'); },'json');
+        var f = $('#addUserForm');
+        $.post('api.php',{action:'add_user', username:f.find('[name=username]').val(), password:f.find('[name=password]').val(), fullname:f.find('[name=fullname]').val(), role:f.find('[name=role]').val(), kitchen_id:f.find('[name=kitchen_id]').val()},function(res){ if(res.success) location.reload(); else alert(res.message||'Error'); },'json');
     });
     function toggleUser(id,active){ $.post('api.php',{action:'toggle_user',user_id:id,is_active:active},function(res){ if(res.success) location.reload(); else alert(res.message); },'json'); }
     function assignKitchen(userId,kitchenId){ $.post('api.php',{action:'assign_kitchen',user_id:userId,kitchen_id:kitchenId},function(res){ if(!res.success) alert(res.message||'Error'); },'json'); }
@@ -895,7 +897,8 @@ function include_manage_items($db) {
         $('#perKgPreview').text(perKg + ' per kg');
     });
     $('#addItemForm').on('submit',function(e){ e.preventDefault();
-        $.post('api.php',{action:'add_item', name:$('[name=name]').val(), category:$('[name=category]').val(), portion_grams:$('[name=portion_grams]').val()},function(res){ if(res.success) location.reload(); else alert(res.message||'Error'); },'json');
+        var f = $('#addItemForm');
+        $.post('api.php',{action:'add_item', name:f.find('[name=name]').val(), category:f.find('[name=category]').val(), portion_grams:f.find('[name=portion_grams]').val()},function(res){ if(res.success) location.reload(); else alert(res.message||'Error'); },'json');
     });
     function toggleItem(id,active){ $.post('api.php',{action:'toggle_item',item_id:id,is_active:active},function(res){ if(res.success) location.reload(); else alert(res.message); },'json'); }
     </script>
