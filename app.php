@@ -110,7 +110,7 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
             .drawer-overlay { display:none !important; }
         }
 
-        /* Mobile bottom drawer */
+        /* Mobile bottom drawer + full mobile optimisation */
         @media (max-width: 767px) {
             .hamburger { display:inline-block; }
             .sidebar {
@@ -140,11 +140,103 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
             }
             .drawer-overlay.open { display:block; }
             .col-md-10 { width:100% !important; flex:0 0 100% !important; max-width:100% !important; }
-            .main-content { padding: 15px !important; }
-            .navbar .d-flex { flex-wrap:wrap; gap:5px !important; font-size:0.85rem; }
-            .stat-card .stat-number { font-size:1.4rem; }
-            .table { font-size:0.82rem; }
+            .main-content { padding: 12px !important; }
             body { padding-bottom: 0; }
+
+            /* Navbar compact */
+            .navbar { padding: 8px 12px !important; }
+            .navbar-brand { font-size: 0.95rem !important; }
+            .navbar .kitchen-badge { display:none; }
+            .navbar .d-flex { flex-wrap:wrap; gap:4px !important; font-size:0.8rem; }
+            .navbar .btn-sm { padding: 2px 8px; font-size: 0.75rem; }
+
+            /* Stat cards */
+            .stat-card { padding: 12px 8px; }
+            .stat-card .stat-number { font-size: 1.3rem; }
+            .stat-card .stat-label { font-size: 0.75rem; }
+
+            /* Cards */
+            .card { border-radius: 10px; }
+            .card-header { padding: 10px 14px; font-size: 0.9rem; }
+            .card-body { padding: 12px; }
+
+            /* Tables */
+            .table { font-size: 0.78rem; }
+            .table th { font-size: 0.7rem; padding: 6px 8px; }
+            .table td { padding: 6px 8px; }
+            .table-responsive { margin: 0 -12px; padding: 0 12px; }
+
+            /* Headings */
+            h4 { font-size: 1.15rem !important; }
+            h5 { font-size: 1rem !important; }
+
+            /* Requisition item rows */
+            .item-row { flex-wrap: wrap !important; padding: 10px 12px !important; gap: 8px !important; }
+            .item-row > div:first-child { flex: 0 0 auto; }
+            .item-row > div:nth-child(2) { flex: 1 1 calc(100% - 50px) !important; min-width: 0; }
+            .item-row > div:last-child { flex: 0 0 100% !important; justify-content: space-between !important; }
+            .item-row label { font-size: 0.9rem; }
+            .item-row small { font-size: 0.75rem; }
+
+            /* Supply rows */
+            .supply-row { flex-wrap: wrap !important; padding: 10px 12px !important; gap: 6px; }
+            .supply-row > div:first-child { flex: 1 1 100% !important; }
+            .supply-row > div:last-child { flex: 0 0 100% !important; justify-content: flex-end !important; }
+
+            /* Sticky bottom bars */
+            [style*="position:sticky"][style*="bottom:0"] { padding: 10px 12px !important; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important; }
+
+            /* Buttons full-width on mobile */
+            .btn-lg { width: 100%; padding: 10px !important; font-size: 0.95rem !important; }
+
+            /* Summary cards row */
+            .row.g-3 > .col-auto { flex: 1 1 0; min-width: 0; }
+            .row.g-3 > .col-auto .rounded-3 { padding: 8px 10px !important; }
+            .row.g-3 > .col-auto .fs-5 { font-size: 1rem !important; }
+            .row.g-3 > .col-auto small { font-size: 0.7rem; }
+
+            /* Store dashboard info bar */
+            .card [style*="linear-gradient"] .row .col-6 { padding: 4px 0; }
+            .card [style*="linear-gradient"] .fw-bold { font-size: 0.85rem; }
+            .card [style*="linear-gradient"] .fs-5 { font-size: 1.1rem !important; }
+
+            /* Progress steps compact */
+            .card-body .d-flex [style*="font-size:1.2rem"] { font-size: 1rem !important; }
+
+            /* Forms stacking */
+            .row.g-2 > [class*="col-md-"] { flex: 0 0 100%; max-width: 100%; }
+            .row.g-2 > [class*="col-md-"]:last-child .btn { margin-top: 4px; }
+
+            /* Admin tables action buttons */
+            td .d-flex.gap-1 { gap: 2px !important; }
+            td .btn-sm { padding: 2px 6px; font-size: 0.75rem; }
+
+            /* Custom items / substitutes compact */
+            .sub-row, .custom-row { flex-wrap: wrap !important; }
+            .sub-row > *, .custom-row > * { flex: 1 1 100% !important; max-width: 100% !important; }
+            .sub-row .btn, .custom-row .btn { flex: 0 0 auto !important; }
+
+            /* Badges */
+            .badge.fs-6 { font-size: 0.75rem !important; padding: 4px 8px; }
+
+            /* Modal */
+            .modal-dialog { margin: 10px; }
+
+            /* Alerts compact */
+            .alert { font-size: 0.85rem; padding: 10px 12px; }
+            .alert ul { padding-left: 16px; margin-bottom: 4px; }
+
+            /* Search bar */
+            .input-group { max-width: 100% !important; }
+
+            /* Footer */
+            footer { padding: 10px !important; font-size: 0.7rem !important; }
+
+            /* Category cards collapse chevron */
+            .card-header .bi-chevron-down, .card-header .bi-chevron-up { font-size: 0.8rem; }
+
+            /* Print/CSV buttons */
+            .no-print .btn-sm { font-size: 0.75rem; padding: 4px 10px; }
         }
         @media print {
             .no-print { display: none !important; }
@@ -159,34 +251,41 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
 <body>
     <!-- Navbar -->
     <nav class="navbar navbar-dark px-3 no-print">
-        <div class="d-flex align-items-center">
+        <div class="d-flex align-items-center" style="min-width:0;">
             <button class="hamburger me-2" onclick="toggleDrawer()" aria-label="Menu"><i class="bi bi-list"></i></button>
-            <span class="navbar-brand mb-0">
-                <i class="bi bi-clipboard2-check"></i> Karibu Kitchen <span class="badge-pilot">PILOT</span>
+            <span class="navbar-brand mb-0 text-truncate">Karibu Kitchen <span class="badge-pilot">PILOT</span></span>
             <?php if ($activeKitchen): ?>
-                <span class="kitchen-badge ms-2"><i class="bi bi-building"></i> <?= htmlspecialchars($activeKitchen['name']) ?></span>
+                <span class="kitchen-badge ms-2 d-none d-md-inline"><i class="bi bi-building"></i> <?= htmlspecialchars($activeKitchen['name']) ?></span>
             <?php endif; ?>
-            </span>
         </div>
-        <div class="d-flex align-items-center gap-3">
+        <div class="d-flex align-items-center gap-2">
             <?php if ($role === 'admin' && count($allKitchens) > 0): ?>
                 <div class="kitchen-switcher">
                     <select onchange="if(this.value) location.href='?page=<?= $page ?>&kitchen_id='+this.value">
-                        <option value="">-- Select Kitchen --</option>
+                        <option value="">Kitchen</option>
                         <?php foreach ($allKitchens as $k): ?>
                             <option value="<?= $k['id'] ?>" <?= $activeKitchenId == $k['id'] ? 'selected' : '' ?>><?= htmlspecialchars($k['name']) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
             <?php endif; ?>
-            <span class="text-light">
+            <span class="text-light d-none d-sm-inline" style="font-size:0.85rem;">
                 <i class="bi bi-person-circle"></i> <?= htmlspecialchars(getUserName()) ?>
                 <span class="badge bg-light text-dark"><?= ucfirst($role) ?></span>
             </span>
-            <span class="text-light opacity-75 d-none d-md-inline"><i class="bi bi-calendar3"></i> <?= date('D, M j, Y') ?></span>
-            <a href="logout.php" class="btn btn-outline-light btn-sm"><i class="bi bi-box-arrow-right"></i> Logout</a>
+            <span class="text-light d-sm-none" style="font-size:0.8rem;">
+                <i class="bi bi-person-circle"></i> <span class="badge bg-light text-dark"><?= ucfirst($role) ?></span>
+            </span>
+            <span class="text-light opacity-75 d-none d-md-inline" style="font-size:0.8rem;"><i class="bi bi-calendar3"></i> <?= date('D, M j') ?></span>
+            <a href="logout.php" class="btn btn-outline-light btn-sm" title="Logout"><i class="bi bi-box-arrow-right"></i><span class="d-none d-sm-inline"> Logout</span></a>
         </div>
     </nav>
+    <?php if ($activeKitchen): ?>
+    <div class="d-md-none text-center py-1 no-print" style="background:var(--primary);color:#fff;font-size:0.8rem;">
+        <i class="bi bi-building"></i> <?= htmlspecialchars($activeKitchen['name']) ?>
+        <?php if ($todaySession): ?> · <?= $todaySession['guest_count'] ?> bed nights<?php endif; ?>
+    </div>
+    <?php endif; ?>
 
     <div class="drawer-overlay no-print" id="drawerOverlay" onclick="toggleDrawer()"></div>
     <div class="container-fluid">
