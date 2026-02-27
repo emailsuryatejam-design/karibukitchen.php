@@ -150,7 +150,19 @@ switch ($action) {
 
     case 'toggle_user':
         if (getUserRole()!=='admin') { echo json_encode(['success'=>false,'message'=>'Not authorized']); exit; }
-        $db->prepare("UPDATE pilot_users SET is_active=? WHERE id=?")->execute([intval($_POST['is_active']??0), intval($_POST['user_id']??0)]);
+        $targetId = intval($_POST['user_id']??0);
+        $newActive = intval($_POST['is_active']??0);
+        // Prevent deactivating the last active admin
+        if ($newActive === 0) {
+            $target = $db->prepare("SELECT role FROM pilot_users WHERE id=?"); $target->execute([$targetId]); $target = $target->fetch();
+            if ($target && $target['role'] === 'admin') {
+                $adminCount = $db->query("SELECT COUNT(*) FROM pilot_users WHERE role='admin' AND is_active=1")->fetchColumn();
+                if ($adminCount <= 1) { echo json_encode(['success'=>false,'message'=>'Cannot deactivate the last admin']); exit; }
+            }
+        }
+        // Prevent deactivating yourself
+        if ($targetId == getUserId() && $newActive === 0) { echo json_encode(['success'=>false,'message'=>'Cannot deactivate yourself']); exit; }
+        $db->prepare("UPDATE pilot_users SET is_active=? WHERE id=?")->execute([$newActive, $targetId]);
         echo json_encode(['success'=>true]);
         break;
 
