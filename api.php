@@ -39,9 +39,9 @@ switch ($action) {
         // Don't allow more than 7 days in future
         $maxFuture = date('Y-m-d', strtotime('+7 days'));
         if ($sessionDate > $maxFuture) { echo json_encode(['success'=>false,'message'=>'Cannot plan more than 7 days ahead']); exit; }
-        // Meal type: full_day (default), lunch, or dinner
+        // Meal type: full_day (default), breakfast, lunch, dinner, or picnic
         $mealType = $_POST['meal_type'] ?? 'full_day';
-        if (!in_array($mealType, ['full_day','lunch','dinner'])) $mealType = 'full_day';
+        if (!in_array($mealType, ['full_day','breakfast','lunch','dinner','picnic'])) $mealType = 'full_day';
         // Check for conflicts
         $check = $db->prepare("SELECT id, meal_type FROM pilot_daily_sessions WHERE session_date=? AND kitchen_id=?");
         $check->execute([$sessionDate, $kitchenId]);
@@ -49,8 +49,8 @@ switch ($action) {
         foreach ($existing as $ex) {
             // Can't create if full_day already exists
             if ($ex['meal_type'] === 'full_day') { echo json_encode(['success'=>false,'message'=>'A full-day session already exists for this date']); exit; }
-            // Can't create full_day if lunch or dinner exists
-            if ($mealType === 'full_day') { echo json_encode(['success'=>false,'message'=>'Lunch or dinner session already exists — cannot create full-day']); exit; }
+            // Can't create full_day if any meal-specific session exists
+            if ($mealType === 'full_day') { echo json_encode(['success'=>false,'message'=>'A meal session already exists — cannot create full-day']); exit; }
             // Can't duplicate same meal type
             if ($ex['meal_type'] === $mealType) { echo json_encode(['success'=>false,'message'=>ucfirst($mealType).' session already exists']); exit; }
         }

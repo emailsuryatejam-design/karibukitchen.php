@@ -59,7 +59,7 @@ $page = $_GET['page'] ?? $defaultPage;
 $todaySessions = [];
 $todaySession = null;
 if ($activeKitchenId) {
-    $stmt = $db->prepare("SELECT * FROM pilot_daily_sessions WHERE session_date = ? AND kitchen_id = ? ORDER BY FIELD(meal_type,'full_day','lunch','dinner')");
+    $stmt = $db->prepare("SELECT * FROM pilot_daily_sessions WHERE session_date = ? AND kitchen_id = ? ORDER BY FIELD(meal_type,'full_day','breakfast','lunch','dinner','picnic')");
     $stmt->execute([$today, $activeKitchenId]);
     $todaySessions = $stmt->fetchAll();
 }
@@ -154,11 +154,11 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && empty($todaySessions)
         .session-tab.active { border-color:var(--primary); background:var(--primary); color:#fff; }
         .session-tab .meal-icon { font-size:1.2rem; display:block; margin-bottom:2px; }
         /* Meal type radio buttons */
-        .meal-options { display:flex; gap:8px; margin:12px 0; }
-        .meal-option { flex:1; }
+        .meal-options { display:flex; gap:6px; margin:12px 0; flex-wrap:wrap; }
+        .meal-option { flex:1 1 calc(33% - 6px); min-width: 80px; }
         .meal-option input { display:none; }
-        .meal-option label { display:block; padding:12px 8px; text-align:center; border:2px solid #dee2e6; border-radius:10px; cursor:pointer; font-weight:600; font-size:0.9rem; transition:all 0.2s; }
-        .meal-option label i { display:block; font-size:1.5rem; margin-bottom:4px; }
+        .meal-option label { display:block; padding:10px 6px; text-align:center; border:2px solid #dee2e6; border-radius:10px; cursor:pointer; font-weight:600; font-size:0.8rem; transition:all 0.2s; }
+        .meal-option label i { display:block; font-size:1.3rem; margin-bottom:2px; }
         .meal-option input:checked + label { border-color:var(--primary); background:var(--primary); color:#fff; }
 
         /* ===== BOTTOM TAB BAR (mobile) ===== */
@@ -358,7 +358,7 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && empty($todaySessions)
             <span class="opacity-75 mx-1">|</span>
             <?= $todaySession['guest_count'] ?> guests
             <?php if ($todaySession['meal_type'] !== 'full_day'): ?>
-                <span class="badge bg-light text-dark" style="font-size:0.6rem;"><?= ucfirst($todaySession['meal_type']) ?></span>
+                <span class="badge bg-light text-dark" style="font-size:0.6rem;"><i class="bi <?=['breakfast'=>'bi-sunrise','lunch'=>'bi-sun','dinner'=>'bi-moon-stars-fill','picnic'=>'bi-tree'][$todaySession['meal_type']]??'bi-circle'?>"></i> <?= ucfirst($todaySession['meal_type']) ?></span>
             <?php endif; ?>
         <?php endif; ?>
     </div>
@@ -418,8 +418,8 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && empty($todaySessions)
                 ?>
                 <div class="session-tabs no-print">
                     <?php foreach ($todaySessions as $ts):
-                        $mealLabel = ['full_day'=>'Full Day','lunch'=>'Lunch','dinner'=>'Dinner'][$ts['meal_type']] ?? $ts['meal_type'];
-                        $mealIcon = ['full_day'=>'bi-calendar-day','lunch'=>'bi-sun','dinner'=>'bi-moon-stars-fill'][$ts['meal_type']] ?? 'bi-circle';
+                        $mealLabel = ['full_day'=>'Full Day','breakfast'=>'Breakfast','lunch'=>'Lunch','dinner'=>'Dinner','picnic'=>'Picnic'][$ts['meal_type']] ?? $ts['meal_type'];
+                        $mealIcon = ['full_day'=>'bi-calendar-day','breakfast'=>'bi-sunrise','lunch'=>'bi-sun','dinner'=>'bi-moon-stars-fill','picnic'=>'bi-tree'][$ts['meal_type']] ?? 'bi-circle';
                         $isActive = ($todaySession && $todaySession['id'] == $ts['id']);
                         $tabUrl = buildUrl($page) . '&sid=' . $ts['id'];
                     ?>
@@ -469,10 +469,14 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && empty($todaySessions)
                     <p class="mb-2 fw-semibold">How many guests?</p>
                     <input type="number" id="guestCount" class="form-control form-control-lg text-center mx-auto mb-3" style="max-width:180px" min="1" max="9999" placeholder="0" autofocus>
                     <p class="mb-1 fw-semibold" style="font-size:0.9rem">Order for:</p>
-                    <div class="meal-options">
+                    <div class="meal-options flex-wrap">
                         <div class="meal-option">
                             <input type="radio" name="mealType" id="mealFull" value="full_day" checked>
                             <label for="mealFull"><i class="bi bi-calendar-day"></i> Full Day</label>
+                        </div>
+                        <div class="meal-option">
+                            <input type="radio" name="mealType" id="mealBreakfast" value="breakfast">
+                            <label for="mealBreakfast"><i class="bi bi-sunrise"></i> Breakfast</label>
                         </div>
                         <div class="meal-option">
                             <input type="radio" name="mealType" id="mealLunch" value="lunch">
@@ -481,6 +485,10 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && empty($todaySessions)
                         <div class="meal-option">
                             <input type="radio" name="mealType" id="mealDinner" value="dinner">
                             <label for="mealDinner"><i class="bi bi-moon-stars-fill"></i> Dinner</label>
+                        </div>
+                        <div class="meal-option">
+                            <input type="radio" name="mealType" id="mealPicnic" value="picnic">
+                            <label for="mealPicnic"><i class="bi bi-tree"></i> Picnic</label>
                         </div>
                     </div>
                 </div>
@@ -492,12 +500,16 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && empty($todaySessions)
     </div>
     <?php endif; ?>
     <?php
-    // Also show "Add another meal" button if only lunch or dinner exists
+    // Show "Add another meal" if not full_day and not all meals are covered
     $canAddMeal = false;
-    $addMealType = '';
-    if ($role === 'chef' && $activeKitchenId && count($todaySessions) === 1 && $todaySessions[0]['meal_type'] !== 'full_day') {
-        $canAddMeal = true;
-        $addMealType = ($todaySessions[0]['meal_type'] === 'lunch') ? 'dinner' : 'lunch';
+    $availableMeals = [];
+    if ($role === 'chef' && $activeKitchenId && !empty($todaySessions)) {
+        $existingMeals = array_column($todaySessions, 'meal_type');
+        if (!in_array('full_day', $existingMeals)) {
+            $allMeals = ['breakfast','lunch','dinner','picnic'];
+            $availableMeals = array_diff($allMeals, $existingMeals);
+            $canAddMeal = !empty($availableMeals);
+        }
     }
     ?>
 
@@ -585,10 +597,10 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && empty($todaySessions)
     <?php endif; ?>
 
     <?php if ($canAddMeal): ?>
-    function addMealSession() {
-        const count = prompt('Guest count for <?= ucfirst($addMealType) ?>:');
+    function addMealSession(mealType) {
+        const count = prompt('Guest count for ' + mealType.charAt(0).toUpperCase() + mealType.slice(1) + ':');
         if (!count || parseInt(count) < 1) return;
-        $.post('api.php', { action: 'create_session', guest_count: parseInt(count), kitchen_id: <?= $activeKitchenId ?>, session_date: '<?= $today ?>', meal_type: '<?= $addMealType ?>' }, function(res) {
+        $.post('api.php', { action: 'create_session', guest_count: parseInt(count), kitchen_id: <?= $activeKitchenId ?>, session_date: '<?= $today ?>', meal_type: mealType }, function(res) {
             if (res.success) location.reload(); else alert(res.message || 'Error');
         }, 'json');
     }
@@ -842,8 +854,10 @@ function include_chef_dashboard($db, $session, $today, $kitchenId) {
 ?>
     <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
         <h4 class="mb-0">Dashboard</h4>
-        <?php if ($session['meal_type'] !== 'full_day'): ?>
-            <span class="badge bg-info text-dark"><i class="bi bi-<?=$session['meal_type']==='lunch'?'sun':'moon-stars-fill'?>"></i> <?=ucfirst($session['meal_type'])?></span>
+        <?php if ($session['meal_type'] !== 'full_day'):
+            $mealIcons = ['breakfast'=>'bi-sunrise','lunch'=>'bi-sun','dinner'=>'bi-moon-stars-fill','picnic'=>'bi-tree'];
+        ?>
+            <span class="badge bg-info text-dark"><i class="bi <?=$mealIcons[$session['meal_type']]??'bi-circle'?>"></i> <?=ucfirst($session['meal_type'])?></span>
         <?php endif; ?>
         <span class="badge <?= $statusInfo[1] ?> status-badge"><?= $statusInfo[0] ?></span>
     </div>
@@ -901,14 +915,20 @@ function include_chef_dashboard($db, $session, $today, $kitchenId) {
 
     <?php
     // "Add another meal" button
-    global $canAddMeal, $addMealType;
+    global $canAddMeal, $availableMeals;
     if ($canAddMeal): ?>
     <div class="card mb-3 border-info">
         <div class="card-body text-center py-3">
-            <button class="btn btn-outline-primary" onclick="addMealSession()">
-                <i class="bi bi-plus-circle"></i> Add <?= ucfirst($addMealType) ?> Session
-            </button>
-            <p class="text-muted mb-0 mt-1" style="font-size:0.8rem">Order separately for <?= $addMealType ?></p>
+            <p class="text-muted mb-2" style="font-size:0.8rem"><i class="bi bi-plus-circle"></i> Add another meal session:</p>
+            <div class="d-flex gap-2 justify-content-center flex-wrap">
+            <?php
+            $mealBtnIcons = ['breakfast'=>'bi-sunrise','lunch'=>'bi-sun','dinner'=>'bi-moon-stars-fill','picnic'=>'bi-tree'];
+            foreach ($availableMeals as $m): ?>
+                <button class="btn btn-outline-primary btn-sm" onclick="addMealSession('<?=$m?>')">
+                    <i class="bi <?=$mealBtnIcons[$m]??'bi-circle'?>"></i> <?= ucfirst($m) ?>
+                </button>
+            <?php endforeach; ?>
+            </div>
         </div>
     </div>
     <?php endif; ?>
@@ -996,19 +1016,31 @@ function include_requisition($db, $session, $today, $kitchenId) {
                 <i class="bi bi-chevron-down ms-auto"></i>
             </div>
             <div class="card-body p-0">
-            <?php foreach($catItems as $item): ?>
-                <div class="item-row d-flex align-items-center px-3 py-2 border-bottom" data-name="<?= strtolower($item['name']) ?>" data-id="<?= $item['id'] ?>" data-portion-kg="<?= $item['portion_weight_kg'] ?>" data-instock-kg="<?= number_format($item['stock_kg'],2,'.','') ?>">
+            <?php foreach($catItems as $item):
+                $isDirect = ($item['order_mode'] ?? 'portions') === 'direct_kg';
+            ?>
+                <div class="item-row d-flex align-items-center px-3 py-2 border-bottom" data-name="<?= strtolower($item['name']) ?>" data-id="<?= $item['id'] ?>" data-portion-kg="<?= $item['portion_weight_kg'] ?>" data-instock-kg="<?= number_format($item['stock_kg'],2,'.','') ?>" data-mode="<?= $isDirect ? 'direct_kg' : 'portions' ?>">
                     <div class="form-check me-2">
                         <input type="checkbox" class="form-check-input item-check" id="chk_<?= $item['id'] ?>">
                     </div>
                     <div style="flex:1;min-width:0;">
                         <label for="chk_<?= $item['id'] ?>" class="mb-0 fw-semibold d-block text-truncate" style="cursor:pointer"><?= htmlspecialchars($item['name']) ?></label>
-                        <small class="text-muted"><?= number_format($item['portion_weight_kg'],3) ?> kg / portion</small>
+                        <?php if ($isDirect): ?>
+                            <small class="text-muted"><i class="bi bi-box-seam"></i> Order in kg directly</small>
+                        <?php else: ?>
+                            <small class="text-muted"><?= number_format($item['portion_weight_kg']*1000,0) ?>g / portion</small>
+                        <?php endif; ?>
                         <?php if ($item['stock_kg'] > 0): ?>
-                            <span class="kg-badge ms-2"><i class="bi bi-box-seam"></i> <?= number_format($item['stock_kg'],2) ?> kg in stock</span>
+                            <span class="kg-badge ms-2"><i class="bi bi-box-seam"></i> <?= number_format($item['stock_kg'],2) ?> kg</span>
                         <?php endif; ?>
                     </div>
                     <div class="d-flex align-items-center gap-2">
+                        <?php if ($isDirect): ?>
+                        <div class="input-group input-group-sm" style="width:110px">
+                            <input type="number" class="form-control text-center direct-kg-input" min="0" step="0.5" value="" placeholder="0">
+                            <span class="input-group-text" style="font-size:0.7rem">kg</span>
+                        </div>
+                        <?php else: ?>
                         <div class="input-group input-group-sm" style="width:110px">
                             <input type="number" class="form-control text-center portions-input" min="0" value="" placeholder="0">
                             <span class="input-group-text" style="font-size:0.7rem">ptn</span>
@@ -1017,6 +1049,7 @@ function include_requisition($db, $session, $today, $kitchenId) {
                             <span class="order-kg fw-bold text-primary" style="font-size:1.05rem">0</span>
                             <small class="text-muted"> kg</small>
                         </div>
+                        <?php endif; ?>
                     </div>
                     <!-- hidden calc fields -->
                     <span class="required-kg d-none">0.00</span>
@@ -1055,55 +1088,73 @@ function include_requisition($db, $session, $today, $kitchenId) {
         $('.item-check').on('change', function(){
             const row = $(this).closest('.item-row');
             const on = $(this).is(':checked');
+            const mode = row.data('mode');
             if (on) {
-                if (!parseInt(row.find('.portions-input').val())) {
-                    row.find('.portions-input').val(1).focus().trigger('input');
+                if (mode === 'direct_kg') {
+                    if (!parseFloat(row.find('.direct-kg-input').val())) {
+                        row.find('.direct-kg-input').val(1).focus().trigger('input');
+                    }
+                } else {
+                    if (!parseInt(row.find('.portions-input').val())) {
+                        row.find('.portions-input').val(1).focus().trigger('input');
+                    }
                 }
                 row.css('background','#f0f7ff');
             } else {
-                row.find('.portions-input').val('').trigger('input');
+                row.find('.portions-input, .direct-kg-input').val('').trigger('input');
                 row.css('background','');
             }
         });
 
-        // Typing portions auto-checks / unchecks the checkbox
+        // Typing portions auto-checks / unchecks the checkbox (portion-based items)
         $('.portions-input').on('input', function(){
             const row = $(this).closest('.item-row');
             const portions = parseInt($(this).val()) || 0;
             const chk = row.find('.item-check');
+            if (portions > 0 && !chk.is(':checked')) { chk.prop('checked', true); row.css('background','#f0f7ff'); }
+            else if (portions === 0 && chk.is(':checked')) { chk.prop('checked', false); row.css('background',''); }
 
-            // Auto-check when portions > 0, uncheck when 0
-            if (portions > 0 && !chk.is(':checked')) {
-                chk.prop('checked', true);
-                row.css('background','#f0f7ff');
-            } else if (portions === 0 && chk.is(':checked')) {
-                chk.prop('checked', false);
-                row.css('background','');
-            }
-
-            const portionKg = parseFloat(row.data('portion-kg')) || 0.3;
+            const portionKg = parseFloat(row.data('portion-kg')) || 0.25;
             const instockKg = parseFloat(row.data('instock-kg')) || 0;
-
             const requiredKg = portions * portionKg;
             const roundoffKg = Math.ceil(requiredKg);
             const orderKg = Math.max(0, roundoffKg - instockKg);
-
             row.find('.required-kg').text(requiredKg.toFixed(2));
             row.find('.roundoff-kg').text(roundoffKg.toFixed(2));
             row.find('.order-kg').text(orderKg > 0 ? orderKg.toFixed(1) : '0');
             updateSummary();
         });
 
+        // Direct KG input (for items like milk that are ordered by kg, not portions)
+        $('.direct-kg-input').on('input', function(){
+            const row = $(this).closest('.item-row');
+            const kg = parseFloat($(this).val()) || 0;
+            const chk = row.find('.item-check');
+            if (kg > 0 && !chk.is(':checked')) { chk.prop('checked', true); row.css('background','#f0f7ff'); }
+            else if (kg === 0 && chk.is(':checked')) { chk.prop('checked', false); row.css('background',''); }
+            const instockKg = parseFloat(row.data('instock-kg')) || 0;
+            const orderKg = Math.max(0, kg - instockKg);
+            row.find('.required-kg').text(kg.toFixed(2));
+            row.find('.roundoff-kg').text(kg.toFixed(2));
+            updateSummary();
+        });
+
         function updateSummary() {
             let items = 0, totalKg = 0;
-            // Standard items
+            // Standard items (portions mode)
             $('.item-check:checked').each(function(){
                 const row = $(this).closest('.item-row');
-                const p = parseInt(row.find('.portions-input').val()) || 0;
-                if (p > 0) {
-                    items++;
-                    totalKg += parseFloat(row.find('.roundoff-kg').text()) || 0;
-                    totalKg -= parseFloat(row.data('instock-kg')) || 0;
+                const mode = row.data('mode');
+                if (mode === 'direct_kg') {
+                    const kg = parseFloat(row.find('.direct-kg-input').val()) || 0;
+                    if (kg > 0) { items++; totalKg += Math.max(0, kg - (parseFloat(row.data('instock-kg'))||0)); }
+                } else {
+                    const p = parseInt(row.find('.portions-input').val()) || 0;
+                    if (p > 0) {
+                        items++;
+                        totalKg += parseFloat(row.find('.roundoff-kg').text()) || 0;
+                        totalKg -= parseFloat(row.data('instock-kg')) || 0;
+                    }
                 }
             });
             // Custom items
@@ -1152,20 +1203,37 @@ function include_requisition($db, $session, $today, $kitchenId) {
         $('#requisitionForm').on('submit', function(e){
             e.preventDefault();
             let items = [];
-            // Standard items
+            // Standard items (both portions and direct_kg modes)
             $('.item-check:checked').each(function(){
                 const row = $(this).closest('.item-row');
-                const portions = parseInt(row.find('.portions-input').val()) || 0;
-                if (portions > 0) {
-                    items.push({
-                        item_id: row.data('id'),
-                        portions: portions,
-                        required_kg: parseFloat(row.find('.required-kg').text()) || 0,
-                        roundoff_kg: parseFloat(row.find('.roundoff-kg').text()) || 0,
-                        instock_kg: parseFloat(row.data('instock-kg')) || 0,
-                        order_kg: Math.max(0, (parseFloat(row.find('.roundoff-kg').text())||0) - (parseFloat(row.data('instock-kg'))||0)),
-                        notes: ''
-                    });
+                const mode = row.data('mode');
+                if (mode === 'direct_kg') {
+                    const kg = parseFloat(row.find('.direct-kg-input').val()) || 0;
+                    if (kg > 0) {
+                        const instockKg = parseFloat(row.data('instock-kg')) || 0;
+                        items.push({
+                            item_id: row.data('id'),
+                            portions: 0,
+                            required_kg: kg,
+                            roundoff_kg: kg,
+                            instock_kg: instockKg,
+                            order_kg: Math.max(0, kg - instockKg),
+                            notes: 'Direct KG'
+                        });
+                    }
+                } else {
+                    const portions = parseInt(row.find('.portions-input').val()) || 0;
+                    if (portions > 0) {
+                        items.push({
+                            item_id: row.data('id'),
+                            portions: portions,
+                            required_kg: parseFloat(row.find('.required-kg').text()) || 0,
+                            roundoff_kg: parseFloat(row.find('.roundoff-kg').text()) || 0,
+                            instock_kg: parseFloat(row.data('instock-kg')) || 0,
+                            order_kg: Math.max(0, (parseFloat(row.find('.roundoff-kg').text())||0) - (parseFloat(row.data('instock-kg'))||0)),
+                            notes: ''
+                        });
+                    }
                 }
             });
             // Custom items
