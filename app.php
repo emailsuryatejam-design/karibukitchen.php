@@ -55,16 +55,26 @@ $defaultPage = match($role) {
 };
 $page = $_GET['page'] ?? $defaultPage;
 
-// Get today's session for active kitchen
+// Get today's sessions for active kitchen (may have lunch + dinner)
+$todaySessions = [];
 $todaySession = null;
 if ($activeKitchenId) {
-    $stmt = $db->prepare("SELECT * FROM pilot_daily_sessions WHERE session_date = ? AND kitchen_id = ?");
+    $stmt = $db->prepare("SELECT * FROM pilot_daily_sessions WHERE session_date = ? AND kitchen_id = ? ORDER BY FIELD(meal_type,'full_day','lunch','dinner')");
     $stmt->execute([$today, $activeKitchenId]);
-    $todaySession = $stmt->fetch();
+    $todaySessions = $stmt->fetchAll();
 }
 
-// Chef needs guest count popup only if they have a kitchen assigned
-$showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $page !== 'reports' && $page !== 'history');
+// Determine active session (from ?sid= param, or pick first)
+if (!empty($todaySessions)) {
+    $activeSid = intval($_GET['sid'] ?? 0);
+    if ($activeSid) {
+        foreach ($todaySessions as $s) { if ($s['id'] == $activeSid) { $todaySession = $s; break; } }
+    }
+    if (!$todaySession) $todaySession = $todaySessions[0];
+}
+
+// Chef needs guest count popup only if they have a kitchen assigned and no sessions exist
+$showGuestPopup = ($role === 'chef' && $activeKitchenId && empty($todaySessions) && $page !== 'reports' && $page !== 'history');
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -84,7 +94,7 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.0/dist/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <style>
-        :root { --primary: #0f3460; --accent: #e94560; --dark: #1a1a2e; --light-bg: #f4f6f9; }
+        :root { --primary: #0f3460; --accent: #e94560; --dark: #1a1a2e; --light-bg: #f4f6f9; --tab-height: 56px; }
         body { background: var(--light-bg); font-family: 'Segoe UI', system-ui, sans-serif; padding-bottom: 0; }
         .navbar { background: var(--dark) !important; }
         .navbar-brand { font-weight: 700; color: #fff !important; }
@@ -138,54 +148,63 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
         /* Push enable banner */
         .push-banner { background:linear-gradient(135deg,#667eea,#764ba2); color:#fff; padding:10px 16px; margin-bottom:12px; border-radius:10px; display:flex; align-items:center; gap:10px; }
         .push-banner button { background:#fff; color:#764ba2; border:none; border-radius:20px; padding:6px 16px; font-weight:600; font-size:0.85rem; cursor:pointer; white-space:nowrap; }
-        .hamburger { display:none; background:none; border:none; color:#fff; font-size:1.5rem; cursor:pointer; padding:4px 8px; }
-        .drawer-handle { display:none; }
+        /* Session tab bar (lunch/dinner) */
+        .session-tabs { display:flex; gap:8px; margin-bottom:12px; }
+        .session-tab { flex:1; padding:10px; border-radius:10px; text-align:center; cursor:pointer; font-weight:600; font-size:0.85rem; transition:all 0.2s; border:2px solid #dee2e6; background:#fff; text-decoration:none; color:#333; }
+        .session-tab.active { border-color:var(--primary); background:var(--primary); color:#fff; }
+        .session-tab .meal-icon { font-size:1.2rem; display:block; margin-bottom:2px; }
+        /* Meal type radio buttons */
+        .meal-options { display:flex; gap:8px; margin:12px 0; }
+        .meal-option { flex:1; }
+        .meal-option input { display:none; }
+        .meal-option label { display:block; padding:12px 8px; text-align:center; border:2px solid #dee2e6; border-radius:10px; cursor:pointer; font-weight:600; font-size:0.9rem; transition:all 0.2s; }
+        .meal-option label i { display:block; font-size:1.5rem; margin-bottom:4px; }
+        .meal-option input:checked + label { border-color:var(--primary); background:var(--primary); color:#fff; }
+
+        /* ===== BOTTOM TAB BAR (mobile) ===== */
+        .bottom-tabs { display:none; }
 
         /* Desktop sidebar */
         @media (min-width: 768px) {
             .sidebar { display:block !important; }
-            .drawer-overlay { display:none !important; }
         }
 
-        /* Mobile bottom drawer + full mobile optimisation */
+        /* ===== MOBILE ===== */
         @media (max-width: 767px) {
-            .hamburger { display:inline-block; }
-            .sidebar {
-                position:fixed; bottom:0; left:0; right:0; top:auto;
-                width:100% !important; flex:none !important; max-width:100% !important;
-                min-height:auto; max-height:65vh;
-                border-radius:20px 20px 0 0;
-                border-right:none; border-top:1px solid #e0e0e0;
-                box-shadow:0 -8px 30px rgba(0,0,0,0.25);
-                transform:translateY(100%);
-                transition:transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-                overflow-y:auto; z-index:1050;
-                padding-top:0; padding-bottom:env(safe-area-inset-bottom, 20px);
+            /* Hide desktop sidebar */
+            .sidebar { display:none !important; }
+
+            /* Bottom tab bar */
+            .bottom-tabs {
+                display:flex; position:fixed; bottom:0; left:0; right:0;
+                background:#fff; border-top:1px solid #e0e0e0; z-index:1050;
+                padding:4px 0 calc(4px + env(safe-area-inset-bottom, 0px));
+                box-shadow:0 -2px 10px rgba(0,0,0,0.08);
             }
-            .sidebar.open { transform:translateY(0); }
-            .sidebar .drawer-handle {
-                display:block; width:40px; height:4px;
-                background:#ccc; border-radius:2px;
-                margin:12px auto 8px;
+            .bottom-tabs a {
+                flex:1; display:flex; flex-direction:column; align-items:center;
+                padding:6px 2px 2px; color:#999; text-decoration:none;
+                font-size:0.6rem; font-weight:600; letter-spacing:0.02em;
+                transition:color 0.15s; position:relative;
             }
-            .sidebar .nav-link { padding:14px 24px; font-size:1rem; border-bottom:1px solid #f0f0f0; }
-            .sidebar .nav-link i { font-size:1.1rem; }
-            .sidebar hr { margin:4px 20px; }
-            .drawer-overlay {
-                display:none; position:fixed; top:0; left:0; right:0; bottom:0;
-                background:rgba(0,0,0,0.4); z-index:1040;
+            .bottom-tabs a i { font-size:1.2rem; margin-bottom:1px; }
+            .bottom-tabs a.active { color:var(--primary); }
+            .bottom-tabs a.active::before {
+                content:''; position:absolute; top:-1px; left:25%; right:25%;
+                height:3px; background:var(--primary); border-radius:0 0 3px 3px;
             }
-            .drawer-overlay.open { display:block; }
+            body { padding-bottom: calc(var(--tab-height) + env(safe-area-inset-bottom, 0px)); }
             .col-md-10 { width:100% !important; flex:0 0 100% !important; max-width:100% !important; }
             .main-content { padding: 12px !important; }
-            body { padding-bottom: 0; }
 
             /* Navbar compact */
-            .navbar { padding: 8px 12px !important; }
-            .navbar-brand { font-size: 0.95rem !important; }
-            .navbar .kitchen-badge { display:none; }
-            .navbar .d-flex { flex-wrap:wrap; gap:4px !important; font-size:0.8rem; }
+            .navbar { padding: 6px 10px !important; min-height: 44px; }
+            .navbar-brand { font-size: 0.9rem !important; }
+            .navbar .d-flex { gap:4px !important; font-size:0.8rem; }
             .navbar .btn-sm { padding: 2px 8px; font-size: 0.75rem; }
+
+            /* Top info strip */
+            .mobile-info-strip { font-size:0.72rem; padding:4px 10px !important; }
 
             /* Stat cards */
             .stat-card { padding: 12px 8px; }
@@ -193,52 +212,55 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
             .stat-card .stat-label { font-size: 0.75rem; }
 
             /* Cards */
-            .card { border-radius: 10px; }
+            .card { border-radius: 10px; margin-bottom: 10px; }
             .card-header { padding: 10px 14px; font-size: 0.9rem; }
             .card-body { padding: 12px; }
 
             /* Tables */
             .table { font-size: 0.78rem; }
-            .table th { font-size: 0.7rem; padding: 6px 8px; }
-            .table td { padding: 6px 8px; }
-            .table-responsive { margin: 0 -12px; padding: 0 12px; }
+            .table th { font-size: 0.7rem; padding: 6px 4px; white-space: nowrap; }
+            .table td { padding: 6px 4px; }
+            .table-responsive { margin: 0 -12px; padding: 0 4px; }
 
             /* Headings */
-            h4 { font-size: 1.15rem !important; }
-            h5 { font-size: 1rem !important; }
+            h4 { font-size: 1.1rem !important; }
+            h5 { font-size: 0.95rem !important; }
 
             /* Requisition item rows */
-            .item-row { flex-wrap: wrap !important; padding: 10px 12px !important; gap: 8px !important; }
+            .item-row { flex-wrap: wrap !important; padding: 10px 12px !important; gap: 6px !important; }
             .item-row > div:first-child { flex: 0 0 auto; }
             .item-row > div:nth-child(2) { flex: 1 1 calc(100% - 50px) !important; min-width: 0; }
             .item-row > div:last-child { flex: 0 0 100% !important; justify-content: space-between !important; }
-            .item-row label { font-size: 0.9rem; }
-            .item-row small { font-size: 0.75rem; }
+            .item-row label { font-size: 0.88rem; }
+            .item-row small { font-size: 0.72rem; }
 
             /* Supply rows */
             .supply-row { flex-wrap: wrap !important; padding: 10px 12px !important; gap: 6px; }
             .supply-row > div:first-child { flex: 1 1 100% !important; }
             .supply-row > div:last-child { flex: 0 0 100% !important; justify-content: flex-end !important; }
 
-            /* Sticky bottom bars */
-            [style*="position:sticky"][style*="bottom:0"] { padding: 10px 12px !important; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important; }
+            /* Sticky bottom bars above tab bar */
+            [style*="position:sticky"][style*="bottom:0"] {
+                bottom: calc(var(--tab-height) + env(safe-area-inset-bottom, 0px)) !important;
+                padding: 10px 12px !important;
+            }
 
             /* Buttons full-width on mobile */
             .btn-lg { width: 100%; padding: 10px !important; font-size: 0.95rem !important; }
 
             /* Summary cards row */
             .row.g-3 > .col-auto { flex: 1 1 0; min-width: 0; }
-            .row.g-3 > .col-auto .rounded-3 { padding: 8px 10px !important; }
-            .row.g-3 > .col-auto .fs-5 { font-size: 1rem !important; }
-            .row.g-3 > .col-auto small { font-size: 0.7rem; }
+            .row.g-3 > .col-auto .rounded-3 { padding: 8px 6px !important; }
+            .row.g-3 > .col-auto .fs-5 { font-size: 0.95rem !important; }
+            .row.g-3 > .col-auto small { font-size: 0.65rem; }
 
             /* Store dashboard info bar */
             .card [style*="linear-gradient"] .row .col-6 { padding: 4px 0; }
-            .card [style*="linear-gradient"] .fw-bold { font-size: 0.85rem; }
-            .card [style*="linear-gradient"] .fs-5 { font-size: 1.1rem !important; }
+            .card [style*="linear-gradient"] .fw-bold { font-size: 0.82rem; }
+            .card [style*="linear-gradient"] .fs-5 { font-size: 1rem !important; }
 
             /* Progress steps compact */
-            .card-body .d-flex [style*="font-size:1.2rem"] { font-size: 1rem !important; }
+            .card-body .d-flex [style*="font-size:1.2rem"] { font-size: 0.95rem !important; }
 
             /* Forms stacking */
             .row.g-2 > [class*="col-md-"] { flex: 0 0 100%; max-width: 100%; }
@@ -246,7 +268,7 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
 
             /* Admin tables action buttons */
             td .d-flex.gap-1 { gap: 2px !important; }
-            td .btn-sm { padding: 2px 6px; font-size: 0.75rem; }
+            td .btn-sm { padding: 2px 6px; font-size: 0.72rem; }
 
             /* Custom items / substitutes compact */
             .sub-row, .custom-row { flex-wrap: wrap !important; }
@@ -254,40 +276,43 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
             .sub-row .btn, .custom-row .btn { flex: 0 0 auto !important; }
 
             /* Badges */
-            .badge.fs-6 { font-size: 0.75rem !important; padding: 4px 8px; }
+            .badge.fs-6 { font-size: 0.72rem !important; padding: 3px 7px; }
 
             /* Modal */
             .modal-dialog { margin: 10px; }
 
             /* Alerts compact */
-            .alert { font-size: 0.85rem; padding: 10px 12px; }
+            .alert { font-size: 0.82rem; padding: 10px 12px; }
             .alert ul { padding-left: 16px; margin-bottom: 4px; }
 
             /* Search bar */
             .input-group { max-width: 100% !important; }
 
             /* Date nav compact */
-            .date-nav { padding: 4px 8px !important; gap: 4px !important; }
-            .date-nav .btn-date { padding: 3px 8px; font-size: 0.78rem; }
-            .date-nav input[type="date"] { font-size: 0.78rem; padding: 3px 6px; max-width: 130px; }
-            .date-future-badge { font-size: 0.6rem !important; padding: 1px 5px; }
+            .date-nav { padding: 4px 6px !important; gap: 3px !important; }
+            .date-nav .btn-date { padding: 3px 7px; font-size: 0.75rem; }
+            .date-nav input[type="date"] { font-size: 0.75rem; padding: 3px 4px; max-width: 125px; }
+            .date-future-badge { font-size: 0.58rem !important; padding: 1px 5px; }
 
-            /* Footer */
-            footer { padding: 10px !important; font-size: 0.7rem !important; }
+            /* Footer hide on mobile */
+            footer.desktop-footer { display:none !important; }
 
             /* Category cards collapse chevron */
             .card-header .bi-chevron-down, .card-header .bi-chevron-up { font-size: 0.8rem; }
 
             /* Print/CSV buttons */
-            .no-print .btn-sm { font-size: 0.75rem; padding: 4px 10px; }
+            .no-print .btn-sm { font-size: 0.72rem; padding: 3px 8px; }
+
+            /* Notification panel mobile */
+            .notif-panel { top:44px; left:8px; right:8px; width:auto; max-height:60vh; }
         }
         @media print {
-            .no-print { display: none !important; }
+            .no-print, .bottom-tabs { display: none !important; }
             .sidebar { display: none !important; }
             .navbar { display: none !important; }
             .main-content { padding: 0 !important; }
             .card { box-shadow: none !important; border: 1px solid #ddd !important; }
-            body { background: #fff; }
+            body { background: #fff; padding-bottom: 0; }
         }
     </style>
 </head>
@@ -295,8 +320,7 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
     <!-- Navbar -->
     <nav class="navbar navbar-dark px-3 no-print">
         <div class="d-flex align-items-center" style="min-width:0;">
-            <button class="hamburger me-2" onclick="toggleDrawer()" aria-label="Menu"><i class="bi bi-list"></i></button>
-            <span class="navbar-brand mb-0 text-truncate">Karibu Kitchen <span class="badge-pilot">PILOT</span></span>
+            <span class="navbar-brand mb-0 text-truncate">Karibu Kitchen</span>
             <?php if ($activeKitchen): ?>
                 <span class="kitchen-badge ms-2 d-none d-md-inline"><i class="bi bi-building"></i> <?= htmlspecialchars($activeKitchen['name']) ?></span>
             <?php endif; ?>
@@ -312,12 +336,9 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
                     </select>
                 </div>
             <?php endif; ?>
-            <span class="text-light d-none d-sm-inline" style="font-size:0.85rem;">
+            <span class="text-light d-none d-md-inline" style="font-size:0.85rem;">
                 <i class="bi bi-person-circle"></i> <?= htmlspecialchars(getUserName()) ?>
                 <span class="badge bg-light text-dark"><?= ucfirst($role) ?></span>
-            </span>
-            <span class="text-light d-sm-none" style="font-size:0.8rem;">
-                <i class="bi bi-person-circle"></i> <span class="badge bg-light text-dark"><?= ucfirst($role) ?></span>
             </span>
             <span class="text-light opacity-75 d-none d-md-inline" style="font-size:0.8rem;"><i class="bi bi-calendar3"></i> <?= date('D, M j', strtotime($today)) ?><?= $isToday ? '' : ' <span class="badge bg-warning text-dark" style="font-size:0.6rem;">FUTURE</span>' ?></span>
             <button class="btn btn-outline-light btn-sm position-relative" id="notifBell" onclick="toggleNotifPanel()" title="Notifications">
@@ -327,10 +348,19 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
             <a href="logout.php" class="btn btn-outline-light btn-sm" title="Logout"><i class="bi bi-box-arrow-right"></i><span class="d-none d-sm-inline"> Logout</span></a>
         </div>
     </nav>
+    <!-- Mobile info strip -->
     <?php if ($activeKitchen): ?>
-    <div class="d-md-none text-center py-1 no-print" style="background:var(--primary);color:#fff;font-size:0.8rem;">
+    <div class="d-md-none text-center py-1 no-print mobile-info-strip" style="background:var(--primary);color:#fff;">
         <i class="bi bi-building"></i> <?= htmlspecialchars($activeKitchen['name']) ?>
-        <?php if ($todaySession): ?> · <?= $todaySession['guest_count'] ?> bed nights<?php endif; ?>
+        <span class="opacity-75 mx-1">|</span>
+        <i class="bi bi-person"></i> <?= htmlspecialchars(getUserName()) ?>
+        <?php if ($todaySession): ?>
+            <span class="opacity-75 mx-1">|</span>
+            <?= $todaySession['guest_count'] ?> guests
+            <?php if ($todaySession['meal_type'] !== 'full_day'): ?>
+                <span class="badge bg-light text-dark" style="font-size:0.6rem;"><?= ucfirst($todaySession['meal_type']) ?></span>
+            <?php endif; ?>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
 
@@ -353,15 +383,13 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
     </div>
     <?php endif; ?>
 
-    <div class="drawer-overlay no-print" id="drawerOverlay" onclick="toggleDrawer()"></div>
     <div class="container-fluid">
         <div class="row">
-            <!-- Sidebar / Bottom Drawer -->
+            <!-- Desktop Sidebar -->
             <div class="col-md-2 sidebar no-print p-0" id="sidebar">
-                <div class="drawer-handle"></div>
                 <nav class="nav flex-column">
                     <?php if ($role === 'chef' || $role === 'admin'): ?>
-                        <a class="nav-link <?= $page === 'chef_dashboard' ? 'active' : '' ?>" href="<?=buildUrl('chef_dashboard')?>"><i class="bi bi-speedometer2"></i> Dashboard</a>
+                        <a class="nav-link <?= $page === 'chef_dashboard' ? 'active' : '' ?>" href="<?=buildUrl('chef_dashboard')?>"><i class="bi bi-house-door"></i> Dashboard</a>
                         <a class="nav-link <?= $page === 'requisition' ? 'active' : '' ?>" href="<?=buildUrl('requisition')?>"><i class="bi bi-cart-plus"></i> Requisition</a>
                         <a class="nav-link <?= $page === 'review_supply' ? 'active' : '' ?>" href="<?=buildUrl('review_supply')?>"><i class="bi bi-clipboard-check"></i> Review Supply</a>
                         <a class="nav-link <?= $page === 'day_close' ? 'active' : '' ?>" href="<?=buildUrl('day_close')?>"><i class="bi bi-moon-stars"></i> Day Close</a>
@@ -384,6 +412,24 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
 
             <!-- Main Content -->
             <div class="col-md-10 main-content">
+                <?php
+                // Session selector tabs (when multiple sessions: lunch + dinner)
+                if (count($todaySessions) > 1 && in_array($page, ['chef_dashboard','requisition','review_supply','day_close','store_dashboard','supply'])):
+                ?>
+                <div class="session-tabs no-print">
+                    <?php foreach ($todaySessions as $ts):
+                        $mealLabel = ['full_day'=>'Full Day','lunch'=>'Lunch','dinner'=>'Dinner'][$ts['meal_type']] ?? $ts['meal_type'];
+                        $mealIcon = ['full_day'=>'bi-calendar-day','lunch'=>'bi-sun','dinner'=>'bi-moon-stars-fill'][$ts['meal_type']] ?? 'bi-circle';
+                        $isActive = ($todaySession && $todaySession['id'] == $ts['id']);
+                        $tabUrl = buildUrl($page) . '&sid=' . $ts['id'];
+                    ?>
+                    <a class="session-tab <?=$isActive?'active':''?>" href="<?=$tabUrl?>">
+                        <span class="meal-icon"><i class="bi <?=$mealIcon?>"></i></span>
+                        <?=$mealLabel?> <small>(<?=$ts['guest_count']?> guests)</small>
+                    </a>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
                 <?php
                 if (!$activeKitchenId && $role !== 'admin' && !in_array($page, ['reports','history'])) {
                     echo '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> You are not assigned to any kitchen. Please contact admin.</div>';
@@ -418,19 +464,42 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
                 <div class="modal-header" style="background:var(--primary);color:#fff;">
                     <h5 class="modal-title"><i class="bi bi-people-fill"></i> <?= $isToday ? 'Good Morning, Chef!' : 'Plan Ahead — ' . date('M j', strtotime($today)) ?></h5>
                 </div>
-                <div class="modal-body text-center py-4">
-                    <p class="text-muted mb-2"><?= htmlspecialchars($activeKitchen['name'] ?? '') ?></p>
-                    <p class="mb-3 fs-5">How many bed nights / guests<?= $isToday ? ' today' : '' ?>?</p>
-                    <p class="mb-3 <?= $isToday ? 'text-muted' : 'text-primary fw-bold' ?>"><?= date('l, F j, Y', strtotime($today)) ?><?= $isToday ? '' : ' <span class="badge bg-warning text-dark">Planning Ahead</span>' ?></p>
-                    <input type="number" id="guestCount" class="form-control form-control-lg text-center mx-auto" style="max-width:200px" min="1" max="9999" placeholder="0" autofocus>
+                <div class="modal-body text-center py-3">
+                    <p class="text-muted mb-1" style="font-size:0.85rem"><?= htmlspecialchars($activeKitchen['name'] ?? '') ?> &middot; <?= date('D, M j', strtotime($today)) ?><?= $isToday ? '' : ' <span class="badge bg-warning text-dark" style="font-size:0.6rem">PLANNING</span>' ?></p>
+                    <p class="mb-2 fw-semibold">How many guests?</p>
+                    <input type="number" id="guestCount" class="form-control form-control-lg text-center mx-auto mb-3" style="max-width:180px" min="1" max="9999" placeholder="0" autofocus>
+                    <p class="mb-1 fw-semibold" style="font-size:0.9rem">Order for:</p>
+                    <div class="meal-options">
+                        <div class="meal-option">
+                            <input type="radio" name="mealType" id="mealFull" value="full_day" checked>
+                            <label for="mealFull"><i class="bi bi-calendar-day"></i> Full Day</label>
+                        </div>
+                        <div class="meal-option">
+                            <input type="radio" name="mealType" id="mealLunch" value="lunch">
+                            <label for="mealLunch"><i class="bi bi-sun"></i> Lunch</label>
+                        </div>
+                        <div class="meal-option">
+                            <input type="radio" name="mealType" id="mealDinner" value="dinner">
+                            <label for="mealDinner"><i class="bi bi-moon-stars-fill"></i> Dinner</label>
+                        </div>
+                    </div>
                 </div>
                 <div class="modal-footer justify-content-center">
-                    <button type="button" class="btn btn-primary btn-lg px-5" onclick="submitGuestCount()"><i class="bi bi-check-lg"></i> Start Day</button>
+                    <button type="button" class="btn btn-primary btn-lg px-5" onclick="submitGuestCount()"><i class="bi bi-check-lg"></i> Start</button>
                 </div>
             </div>
         </div>
     </div>
     <?php endif; ?>
+    <?php
+    // Also show "Add another meal" button if only lunch or dinner exists
+    $canAddMeal = false;
+    $addMealType = '';
+    if ($role === 'chef' && $activeKitchenId && count($todaySessions) === 1 && $todaySessions[0]['meal_type'] !== 'full_day') {
+        $canAddMeal = true;
+        $addMealType = ($todaySessions[0]['meal_type'] === 'lunch') ? 'dinner' : 'lunch';
+    }
+    ?>
 
     <!-- PWA Install Banner -->
     <div id="installBanner" class="no-print" style="display:none; position:fixed; bottom:0; left:0; right:0; background:linear-gradient(135deg,var(--primary),var(--dark)); color:#fff; padding:14px 20px; text-align:center; z-index:9999; box-shadow:0 -4px 20px rgba(0,0,0,0.3);">
@@ -462,10 +531,44 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
     </div>
     <?php endif; ?>
 
-    <!-- Footer -->
-    <footer class="text-center py-3 no-print" style="background:#1a1a2e; color:rgba(255,255,255,0.5); font-size:0.8rem;">
+    <!-- Footer (desktop only) -->
+    <footer class="text-center py-3 no-print desktop-footer" style="background:#1a1a2e; color:rgba(255,255,255,0.5); font-size:0.8rem;">
         Powered by <strong style="color:rgba(255,255,255,0.7);">VyomaAI Studios</strong>
     </footer>
+
+    <!-- Bottom Tab Bar (mobile only) -->
+    <nav class="bottom-tabs no-print">
+        <?php if ($role === 'chef' || $role === 'admin'): ?>
+            <a href="<?=buildUrl('chef_dashboard')?>" class="<?=$page==='chef_dashboard'?'active':''?>">
+                <i class="bi bi-house-door<?=$page==='chef_dashboard'?'-fill':''?>"></i> Home
+            </a>
+            <a href="<?=buildUrl('requisition')?>" class="<?=$page==='requisition'?'active':''?>">
+                <i class="bi bi-cart<?=$page==='requisition'?'-fill':'-plus'?>"></i> Order
+            </a>
+            <a href="<?=buildUrl('review_supply')?>" class="<?=$page==='review_supply'?'active':''?>">
+                <i class="bi bi-clipboard<?=$page==='review_supply'?'-check-fill':'-check'?>"></i> Review
+            </a>
+            <a href="<?=buildUrl('day_close')?>" class="<?=$page==='day_close'?'active':''?>">
+                <i class="bi bi-moon<?=$page==='day_close'?'-stars-fill':'-stars'?>"></i> Close
+            </a>
+            <a href="?page=reports" class="<?=$page==='reports'||$page==='history'?'active':''?>">
+                <i class="bi bi-bar-chart<?=$page==='reports'||$page==='history'?'-fill':''?>"></i> Reports
+            </a>
+        <?php elseif ($role === 'store'): ?>
+            <a href="<?=buildUrl('store_dashboard')?>" class="<?=$page==='store_dashboard'?'active':''?>">
+                <i class="bi bi-house-door<?=$page==='store_dashboard'?'-fill':''?>"></i> Home
+            </a>
+            <a href="<?=buildUrl('supply')?>" class="<?=$page==='supply'?'active':''?>">
+                <i class="bi bi-truck<?=$page==='supply'?'':''?>"></i> Supply
+            </a>
+            <a href="?page=reports" class="<?=$page==='reports'?'active':''?>">
+                <i class="bi bi-bar-chart<?=$page==='reports'?'-fill':''?>"></i> Reports
+            </a>
+            <a href="?page=history" class="<?=$page==='history'?'active':''?>">
+                <i class="bi bi-clock-history"></i> History
+            </a>
+        <?php endif; ?>
+    </nav>
 
     <script>
     <?php if ($showGuestPopup): ?>
@@ -473,11 +576,22 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
     function submitGuestCount() {
         const count = parseInt($('#guestCount').val());
         if (!count || count < 1) { alert('Please enter a valid number.'); return; }
-        $.post('api.php', { action: 'create_session', guest_count: count, kitchen_id: <?= $activeKitchenId ?>, session_date: '<?= $today ?>' }, function(res) {
+        const mealType = $('input[name="mealType"]:checked').val() || 'full_day';
+        $.post('api.php', { action: 'create_session', guest_count: count, kitchen_id: <?= $activeKitchenId ?>, session_date: '<?= $today ?>', meal_type: mealType }, function(res) {
             if (res.success) location.reload(); else alert(res.message || 'Error');
         }, 'json');
     }
     $('#guestCount').on('keypress', function(e) { if (e.which === 13) submitGuestCount(); });
+    <?php endif; ?>
+
+    <?php if ($canAddMeal): ?>
+    function addMealSession() {
+        const count = prompt('Guest count for <?= ucfirst($addMealType) ?>:');
+        if (!count || parseInt(count) < 1) return;
+        $.post('api.php', { action: 'create_session', guest_count: parseInt(count), kitchen_id: <?= $activeKitchenId ?>, session_date: '<?= $today ?>', meal_type: '<?= $addMealType ?>' }, function(res) {
+            if (res.success) location.reload(); else alert(res.message || 'Error');
+        }, 'json');
+    }
     <?php endif; ?>
 
     // Date navigation
@@ -489,23 +603,9 @@ $showGuestPopup = ($role === 'chef' && $activeKitchenId && !$todaySession && $pa
         } else {
             params.set('date', d);
         }
+        params.delete('sid'); // Reset session when changing date
         window.location.href = '?' + params.toString();
     }
-
-    // Bottom drawer toggle
-    function toggleDrawer() {
-        document.getElementById('sidebar').classList.toggle('open');
-        document.getElementById('drawerOverlay').classList.toggle('open');
-    }
-    // Close drawer when clicking a nav link on mobile
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        link.addEventListener('click', () => {
-            if (window.innerWidth <= 767) {
-                document.getElementById('sidebar').classList.remove('open');
-                document.getElementById('drawerOverlay').classList.remove('open');
-            }
-        });
-    });
 
     function printSection(id) {
         const content = document.getElementById(id).innerHTML;
@@ -740,22 +840,78 @@ function include_chef_dashboard($db, $session, $today, $kitchenId) {
     $statusLabels = ['open'=>['Open','bg-primary'],'requisition_sent'=>['Requisition Sent','bg-warning text-dark'],'supplied'=>['Supplied','bg-success'],'day_closed'=>['Day Closed','bg-secondary']];
     $statusInfo = $statusLabels[$session['status']] ?? ['Unknown','bg-dark'];
 ?>
-    <h4 class="mb-4">Chef Dashboard</h4>
-    <div class="row g-3 mb-4">
-        <div class="col-6 col-md-3"><div class="card stat-card"><div class="stat-number"><?= $session['guest_count'] ?></div><div class="stat-label">Bed Nights</div></div></div>
-        <div class="col-6 col-md-3"><div class="card stat-card"><div class="stat-number"><?= $totalReqItems ?></div><div class="stat-label">Items Ordered</div></div></div>
-        <div class="col-6 col-md-3"><div class="card stat-card"><div class="stat-number"><?= number_format($totalOrderKg, 1) ?> <small>kg</small></div><div class="stat-label">Total Order</div></div></div>
-        <div class="col-6 col-md-3"><div class="card stat-card"><span class="badge <?= $statusInfo[1] ?> status-badge fs-6"><?= $statusInfo[0] ?></span><div class="stat-label mt-2">Session Status</div></div></div>
-    </div>
-    <div class="card"><div class="card-header">Quick Actions</div><div class="card-body"><div class="d-flex gap-2 flex-wrap">
-        <?php if ($session['status'] === 'open'): ?><a href="<?=buildUrl('requisition')?>" class="btn btn-primary"><i class="bi bi-cart-plus"></i> Create Requisition</a><?php endif; ?>
-        <?php if ($session['status'] === 'supplied'): ?><a href="<?=buildUrl('review_supply')?>" class="btn btn-primary"><i class="bi bi-clipboard-check"></i> Review Supply</a><a href="<?=buildUrl('day_close')?>" class="btn btn-accent"><i class="bi bi-moon-stars"></i> Day Close</a><?php endif; ?>
-        <?php if ($session['status'] === 'requisition_sent'): ?>
-            <span class="btn btn-outline-secondary disabled"><i class="bi bi-hourglass-split"></i> Waiting for Store...</span>
-            <button class="btn btn-outline-danger" onclick="resetRequisition(<?=$session['id']?>)"><i class="bi bi-arrow-counterclockwise"></i> Edit / Reset Requisition</button>
+    <div class="d-flex align-items-center gap-2 mb-3 flex-wrap">
+        <h4 class="mb-0">Dashboard</h4>
+        <?php if ($session['meal_type'] !== 'full_day'): ?>
+            <span class="badge bg-info text-dark"><i class="bi bi-<?=$session['meal_type']==='lunch'?'sun':'moon-stars-fill'?>"></i> <?=ucfirst($session['meal_type'])?></span>
         <?php endif; ?>
-        <a href="?page=reports" class="btn btn-outline-primary"><i class="bi bi-file-earmark-bar-graph"></i> View Reports</a>
-    </div></div></div>
+        <span class="badge <?= $statusInfo[1] ?> status-badge"><?= $statusInfo[0] ?></span>
+    </div>
+    <div class="row g-2 mb-3">
+        <div class="col-4"><div class="card stat-card"><div class="stat-number"><?= $session['guest_count'] ?></div><div class="stat-label">Guests</div></div></div>
+        <div class="col-4"><div class="card stat-card"><div class="stat-number"><?= $totalReqItems ?></div><div class="stat-label">Items</div></div></div>
+        <div class="col-4"><div class="card stat-card"><div class="stat-number"><?= number_format($totalOrderKg, 1) ?><small>kg</small></div><div class="stat-label">Order</div></div></div>
+    </div>
+
+    <!-- Quick Action Card -->
+    <?php if ($session['status'] === 'open'): ?>
+    <a href="<?=buildUrl('requisition')?>" class="card mb-3 text-decoration-none" style="background:linear-gradient(135deg,var(--primary),#1a5276);color:#fff;">
+        <div class="card-body text-center py-4">
+            <i class="bi bi-cart-plus" style="font-size:2rem;"></i>
+            <h5 class="mt-2 mb-0">Create Requisition</h5>
+            <small class="opacity-75">Tap to start ordering items</small>
+        </div>
+    </a>
+    <?php elseif ($session['status'] === 'requisition_sent'): ?>
+    <div class="card mb-3" style="background:#fff8f0;">
+        <div class="card-body text-center py-3">
+            <i class="bi bi-hourglass-split text-warning" style="font-size:2rem;"></i>
+            <h5 class="mt-2 mb-1">Waiting for Store</h5>
+            <p class="text-muted mb-2" style="font-size:0.85rem">Your requisition has been sent</p>
+            <button class="btn btn-outline-danger btn-sm" onclick="resetRequisition(<?=$session['id']?>)"><i class="bi bi-arrow-counterclockwise"></i> Edit / Reset</button>
+        </div>
+    </div>
+    <?php elseif ($session['status'] === 'supplied'): ?>
+    <div class="row g-2 mb-3">
+        <div class="col-6">
+            <a href="<?=buildUrl('review_supply')?>" class="card text-decoration-none h-100">
+                <div class="card-body text-center py-3">
+                    <i class="bi bi-clipboard-check text-primary" style="font-size:1.5rem;"></i>
+                    <div class="fw-bold mt-1">Review Supply</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-6">
+            <a href="<?=buildUrl('day_close')?>" class="card text-decoration-none h-100" style="background:var(--accent);color:#fff;">
+                <div class="card-body text-center py-3">
+                    <i class="bi bi-moon-stars" style="font-size:1.5rem;"></i>
+                    <div class="fw-bold mt-1">Day Close</div>
+                </div>
+            </a>
+        </div>
+    </div>
+    <?php elseif ($session['status'] === 'day_closed'): ?>
+    <div class="card mb-3" style="background:#f0f4f8;">
+        <div class="card-body text-center py-3">
+            <i class="bi bi-check-circle-fill text-success" style="font-size:2rem;"></i>
+            <h5 class="mt-2 mb-0">Day Closed</h5>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <?php
+    // "Add another meal" button
+    global $canAddMeal, $addMealType;
+    if ($canAddMeal): ?>
+    <div class="card mb-3 border-info">
+        <div class="card-body text-center py-3">
+            <button class="btn btn-outline-primary" onclick="addMealSession()">
+                <i class="bi bi-plus-circle"></i> Add <?= ucfirst($addMealType) ?> Session
+            </button>
+            <p class="text-muted mb-0 mt-1" style="font-size:0.8rem">Order separately for <?= $addMealType ?></p>
+        </div>
+    </div>
+    <?php endif; ?>
     <script>
     function resetRequisition(sessionId) {
         if (!confirm('This will delete your current requisition so you can re-create it.\n\nAre you sure?')) return;

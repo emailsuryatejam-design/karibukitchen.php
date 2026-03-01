@@ -39,11 +39,23 @@ switch ($action) {
         // Don't allow more than 7 days in future
         $maxFuture = date('Y-m-d', strtotime('+7 days'));
         if ($sessionDate > $maxFuture) { echo json_encode(['success'=>false,'message'=>'Cannot plan more than 7 days ahead']); exit; }
-        $check = $db->prepare("SELECT id FROM pilot_daily_sessions WHERE session_date=? AND kitchen_id=?");
+        // Meal type: full_day (default), lunch, or dinner
+        $mealType = $_POST['meal_type'] ?? 'full_day';
+        if (!in_array($mealType, ['full_day','lunch','dinner'])) $mealType = 'full_day';
+        // Check for conflicts
+        $check = $db->prepare("SELECT id, meal_type FROM pilot_daily_sessions WHERE session_date=? AND kitchen_id=?");
         $check->execute([$sessionDate, $kitchenId]);
-        if ($check->fetch()) { echo json_encode(['success'=>false,'message'=>'Session already exists for this date']); exit; }
-        $stmt = $db->prepare("INSERT INTO pilot_daily_sessions (session_date, guest_count, chef_id, kitchen_id, status) VALUES (?,?,?,?,'open')");
-        $stmt->execute([$sessionDate, $guestCount, getUserId(), $kitchenId]);
+        $existing = $check->fetchAll();
+        foreach ($existing as $ex) {
+            // Can't create if full_day already exists
+            if ($ex['meal_type'] === 'full_day') { echo json_encode(['success'=>false,'message'=>'A full-day session already exists for this date']); exit; }
+            // Can't create full_day if lunch or dinner exists
+            if ($mealType === 'full_day') { echo json_encode(['success'=>false,'message'=>'Lunch or dinner session already exists — cannot create full-day']); exit; }
+            // Can't duplicate same meal type
+            if ($ex['meal_type'] === $mealType) { echo json_encode(['success'=>false,'message'=>ucfirst($mealType).' session already exists']); exit; }
+        }
+        $stmt = $db->prepare("INSERT INTO pilot_daily_sessions (session_date, meal_type, guest_count, chef_id, kitchen_id, status) VALUES (?,?,?,?,?,'open')");
+        $stmt->execute([$sessionDate, $mealType, $guestCount, getUserId(), $kitchenId]);
         echo json_encode(['success'=>true,'session_id'=>$db->lastInsertId()]);
         break;
 
